@@ -95,19 +95,19 @@
               Starting deployment with:
               - Environment: {{ k8s_env }}
               - Branch: {{ branch_name | default('develop') }}
-              - Target Server: 10.0.3.252
+              - Target Server: 10.0.3.74
               - Workspace: {{ remote_workspace }}
 
         - name: Add SSH host key
           shell: |
-            ssh-keyscan -H 10.0.3.252 >> ~/.ssh/known_hosts
+            ssh-keyscan -H 10.0.3.74 >> ~/.ssh/known_hosts
           changed_when: false
 
         - name: Execute dev deployment
           shell: |
             set -x  # Enable command tracing
-            echo "Starting SSH connection to 10.0.3.252..."
-            ssh -o StrictHostKeyChecking=no ubuntu@10.0.3.252"
+            echo "Starting SSH connection to 10.0.3.74..."
+            ssh -o StrictHostKeyChecking=no ubuntu@10.0.3.74 "
               set -x  # Enable command tracing inside SSH
               pwd
               echo 'Current directory: \$(pwd)'

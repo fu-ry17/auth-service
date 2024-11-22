@@ -30,7 +30,7 @@ pipeline {
                         def dockerPass = sh(script: "echo $DOCKER_CREDS | cut -d':' -f2", returnStdout: true).trim()
                         
                         ansiblePlaybook(
-                            credentialsId: 'dev-server',
+                            credentialsId: 'ubuntu-dev',
                             disableHostKeyChecking: true,
                             installation: 'ansible',
                             inventory: 'dev.inv',
