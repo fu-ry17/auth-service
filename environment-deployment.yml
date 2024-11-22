@@ -16,62 +16,98 @@
     - name: Print deployment info
       debug:
         msg: |
+          ==========================================
           Starting deployment to {{ env_type }} environment:
           - Branch: {{ branch_name }}
           - Application: {{ app_name }}
           - Version: {{ app_version }}
           - Domain: {{ k8s_domain }}
           - Route: {{ k8s_route }}
+          ==========================================
 
     - name: Deploy to non-prod environment
       block:
-        - name: Deploy to dev
+        - name: Check Git status
+          shell: git status
+          args:
+            chdir: /home/ubuntu/agencify-backend
+          register: git_status
           when: env_type == 'dev'
-          shell: |
-            echo "Starting deployment at $(date)"
-            cd /home/ubuntu/agencify-backend
-            
-            echo "Current Git status:"
-            git status
-            
-            echo "Fetching latest changes..."
-            git fetch
-            
-            echo "Checking out branch {{ branch_name }}..."
-            git checkout {{ branch_name }}
-            
-            echo "Pulling latest changes..."
-            git pull origin {{ branch_name }} --rebase
-            
-            echo "Git status after pull:"
-            git status
-            
-            echo "Starting new containers..."
-            sudo docker compose up -d
-            
-            echo "Container status:"
-            sudo docker compose ps
-            
-            echo "Deployment completed at $(date)"
-          register: dev_deploy
 
-        - name: Show deployment status
+        - name: Checkout branch
+          shell: git checkout {{ branch_name }}
+          args:
+            chdir: /home/ubuntu/agencify-backend
+          register: git_checkout
+          when: env_type == 'dev'
+
+        - name: Show checkout results
           debug:
             msg: |
-              Deployment Status:
-              Start Time: {{ dev_deploy.start | default('Unknown') }}
-              End Time: {{ dev_deploy.end | default('Unknown') }}
-              Duration: {{ dev_deploy.delta | default('Unknown') }}
-              
-              Output:
-              {{ dev_deploy.stdout_lines | default([]) }}
-          when: dev_deploy is success
+              ==========================================
+              Git Checkout Results:
+              {{ git_checkout.stdout_lines | default([]) }}
+              ==========================================
 
-        - name: Show deployment errors
+        - name: Pull latest changes
+          shell: git pull origin {{ branch_name }} --rebase
+          args:
+            chdir: /home/ubuntu/agencify-backend
+          register: git_pull
+          when: env_type == 'dev'
+
+        - name: Show pull results
           debug:
             msg: |
-              Deployment Failed:
-              Error: {{ dev_deploy.stderr_lines | default([]) }}
-              Return Code: {{ dev_deploy.rc | default('Unknown') }}
-          when: dev_deploy is failed
-          failed_when: true
+              ==========================================
+              Git Pull Results:
+              {{ git_pull.stdout_lines | default([]) }}
+              ==========================================
+
+        - name: Show container stop results
+          debug:
+            msg: |
+              ==========================================
+              Stopping Containers:
+              {{ docker_stop.stdout_lines | default([]) }}
+              ==========================================
+
+        - name: Start new containers
+          shell: docker compose up -d
+          args:
+            chdir: /home/ubuntu/agencify-backend
+          register: docker_start
+          when: env_type == 'dev'
+
+        - name: Show container start results
+          debug:
+            msg: |
+              ==========================================
+              Starting Containers:
+              {{ docker_start.stdout_lines | default([]) }}
+              ==========================================
+
+        - name: Check container status
+          shell: docker compose ps
+          args:
+            chdir: /home/ubuntu/agencify-backend
+          register: docker_status
+          when: env_type == 'dev'
+
+        - name: Show container status
+          debug:
+            msg: |
+              ==========================================
+              Container Status:
+              {{ docker_status.stdout_lines | default([]) }}
+              ==========================================
+
+    - name: Show deployment completion
+      debug:
+        msg: |
+          ==========================================
+          Deployment completed successfully!
+          Environment: {{ env_type }}
+          Branch: {{ branch_name }}
+          Time: {{ ansible_date_time.iso8601 }}
+          ==========================================
