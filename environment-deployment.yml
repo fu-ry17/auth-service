@@ -1,6 +1,7 @@
 ---
 - hosts: dev
   become: true
+  become_user: ubuntu
   vars:
     env_type: "{{ env_type }}"
     branch_name: "{{ branch_name | default('develop') }}"
@@ -23,94 +24,32 @@
           - Domain: {{ k8s_domain }}
           - Route: {{ k8s_route }}
 
-    - name: Change to ubuntu user
-      shell: su ubuntu
+    - name: Verify current user
+      shell: whoami
+      register: current_user
 
-    - name: List files in /home/ubuntu
-      shell: ls -l
-
-
-
-    # - name: Deploy to non-prod environment
-    #   block:
-    #     - name: Deploy to dev
-    #       when: env_type == 'dev'
-    #       shell: |
-    #         echo "Deploying to dev environment..."
-    #         ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no yewa@10.0.3.74 "
-    #           suso su ubuntu
-    #           cd /home/ubuntu/agencify-backend && \
-    #           git fetch && \
-    #           git checkout {{ branch_name }} && \
-    #           git pull origin {{ branch_name }} --rebase && \
-    #           sudo docker compose up -d
-    #         "
-    #       register: dev_deploy
-
-    #     - name: Deploy to staging
-    #       when: env_type == 'staging'
-    #       shell: |
-    #         echo "Deploying to staging environment..."
-    #         ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no ubuntu@10.0.3.85 "
-    #           cd /home/ubuntu/agencify-backend && \
-    #           git fetch && \
-    #           git checkout {{ branch_name }} && \
-    #           git pull origin {{ branch_name }} --rebase && \
-    #           sudo docker compose -f staging-compose.yml up -d
-    #         "
-    #       register: staging_deploy
-
-    #     - name: Show non-prod deployment status
-    #       debug:
-    #         msg: |
-    #           Deployment completed successfully for {{ env_type }} environment:
-    #           {% if env_type == 'dev' %}
-    #           {{ dev_deploy.stdout_lines | default([]) }}
-    #           {% elif env_type == 'staging' %}
-    #           {{ staging_deploy.stdout_lines | default([]) }}
-    #           {% endif %}
-    #   when: env_type != 'prod'
-
-    # - name: Deploy to production
-    #   block:
-    #     - name: Deploy using Helm
-    #       shell: |
-    #         echo "Deploying to production environment..."
-    #         helm list -n {{ env_type }} && \
-    #         helm upgrade --install \
-    #           --set image.repository='{{ docker_registry }}/{{ app_name }}' \
-    #           --set image.tag='{{ app_version }}' \
-    #           --set ingress.domain='{{ k8s_domain }}' \
-    #           --set ingress.route='{{ k8s_route }}' \
-    #           {{ app_name }} charts/ -n {{ env_type }}
-    #       register: prod_deploy
-
-    #     - name: Show production deployment status
-    #       debug:
-    #         msg: |
-    #           Production deployment completed successfully:
-    #           {{ prod_deploy.stdout_lines | default([]) }}
-    #   when: env_type == 'prod'
-
-    # - name: Show deployment errors
+    # - name: Show current user
     #   debug:
-    #     msg: |
-    #       Deployment failed:
-    #       {% if env_type == 'dev' %}
-    #       {{ dev_deploy.stderr_lines | default([]) }}
-    #       {% elif env_type == 'staging' %}
-    #       {{ staging_deploy.stderr_lines | default([]) }}
-    #       {% else %}
-    #       {{ prod_deploy.stderr_lines | default([]) }}
-    #       {% endif %}
-    #   when: >
-    #     (env_type == 'dev' and dev_deploy is failed) or
-    #     (env_type == 'staging' and staging_deploy is failed) or
-    #     (env_type == 'prod' and prod_deploy is failed)
-    #   failed_when: true 
+    #     msg: "Current user is: {{ current_user.stdout }}"
 
-    # - name: Cleanup
-    #   file:
-    #     path: "/tmp/deploy_key"
-    #     state: absent
-    #   when: key_file.changed 
+    # - name: Deploy to dev environment
+    #   when: env_type == 'dev'
+    #   block:
+    #     - name: Clone or update repository
+    #       git:
+    #         repo: https://github.com/fu-ry17/auth-service.git
+    #         dest: /home/ubuntu/demo-backend
+    #         version: "{{ branch_name }}"
+    #         force: yes
+
+    #     - name: Start docker compose
+    #       shell: |
+    #         cd /home/ubuntu/agencify-backend && \
+    #         docker compose up -d
+    #       register: deploy_result
+
+    #     - name: Show deployment result
+    #       debug:
+    #         msg: |
+    #           Deployment output:
+    #           {{ deploy_result.stdout_lines | default([]) }}
