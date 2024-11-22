@@ -1,0 +1,9 @@
+spring:
+  cloud:
+    config:
+      uri:  http://10.0.3.74:8888
+      label: oracle
+  application:
+    name: authservice
+  main:
+    allow-bean-definition-overriding: true

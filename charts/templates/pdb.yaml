@@ -1,0 +1,9 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  minAvailable: {{ .Values.disruptionBudget.maxUnavailable }}
+  selector:
+    matchLabels:
+  {{- include "charts.selectorLabels" . | nindent 6}}

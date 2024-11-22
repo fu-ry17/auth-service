@@ -1,0 +1,70 @@
+# Default values for charts.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+fullnameOverride: auth-service
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+containers:
+  name: auth-service
+  port: 60238
+
+image:
+  repository: ""
+  pullPolicy: IfNotPresent
+  pullSecret: agn-docker-registry
+  tag: ""
+
+resource:
+  request:
+    memory: 512Mi
+    cpu: 50m
+  limit:
+    memory: 1Gi
+
+readinessProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 5
+  timeoutSeconds: 3
+  successThreshold: 2
+  failureThreshold: 4
+  httpGet:
+    path: /actuator/health
+    port: 60238
+
+livenessProbe:
+  initialDelaySeconds: 120
+  timeoutSeconds: 3
+  successThreshold: 1
+  periodSeconds: 5
+  failureThreshold: 4
+  httpGet:
+    path: /actuator/health
+    port: 60238
+
+service:
+  type: NodePort
+  port: 80
+  targetPort: 60238
+  name: auth-service
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 1
+  cpu:
+    enabled: true
+    targetCPUUtilizationPercentage: 80
+  memory:
+    enabled: false
+    targetMemoryUtilizationPercentage: 80
+
+disruptionBudget:
+  maxUnavailable: 1
+
