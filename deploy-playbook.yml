@@ -4,6 +4,7 @@
   vars:
     workspace_dir: "{{ workspace_dir | default(ansible_env.WORKSPACE) }}"
     remote_workspace: "/opt/jenkins/workspace/auth-service"
+    docker_registry: "10.0.3.224:8003"
 
   tasks:
     - name: Create remote workspace directory
@@ -71,7 +72,34 @@
         chdir: "{{ remote_workspace }}"
       register: version_result
 
-    - name: Display version
+    - name: Set version fact
+      set_fact:
+        app_version: "{{ version_result.stdout | trim }}"
+
+    - name: Get chart name
+      shell: |
+        docker run -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm show chart ./charts | grep name | cut -d: -f 2 | tr -d ' '
+      register: chart_name_result
+
+    - name: Set chart name fact
+      set_fact:
+        chart_name: "{{ chart_name_result.stdout | trim }}"
+        app_name: "{{ chart_name_result.stdout | trim }}-{{ env_type | default('dev') }}"
+
+    - name: Build and push Docker image
+      docker_image:
+        build:
+          path: "{{ remote_workspace }}"
+          pull: yes
+        name: "{{ docker_registry }}/{{ app_name }}"
+        tag: "{{ app_version }}"
+        push: yes
+        source: build
+      register: docker_build
+
+    - name: Display build info
       debug:
-        msg: "Version: {{ version_result.stdout | trim }}"
+        msg: 
+          - "Image: {{ docker_registry }}/{{ app_name }}:{{ app_version }}"
+          - "Chart: {{ chart_name }}"
     
