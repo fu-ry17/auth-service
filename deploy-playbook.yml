@@ -3,30 +3,9 @@
   become: true
   vars:
     workspace_dir: "{{ workspace_dir | default(ansible_env.WORKSPACE) }}"
-    gradle_image: "gradle:8.2.1-jdk17-alpine"
-    kubectl_image: "dtzar/helm-kubectl"
     remote_workspace: "/opt/jenkins/workspace/auth-service"
 
   tasks:
-    # Initial setup tasks
-    - name: Install python pip
-      apt:
-        name: python3-pip
-        state: present
-        update_cache: yes
-    
-    - name: Install docker-py module
-      apt:
-        name: python3-docker
-        state: present
-        update_cache: yes
-
-    - name: Install java 21
-      apt:
-        name: openjdk-21-jre
-        state: present
-        update_cache: yes
-
     # Create and prepare workspace directory
     - name: Create jenkins workspace parent directory
       file:
@@ -67,47 +46,37 @@
         owner: jenkins
         group: jenkins
 
-    # Setup stage tasks
-    - name: Pull Gradle Docker image
-      docker_image:
-        name: "{{ gradle_image }}"
-        source: pull
-        force_source: yes
-
-    - name: Pull Kubectl Docker image
-      docker_image:
-        name: "{{ kubectl_image }}"
-        source: pull
-        force_source: yes
-
-    # Unit Test stage tasks
-    - name: Debug workspace directory
-      debug:
-        msg: "Current workspace directory: {{ remote_workspace }}"
-
-    - name: List directory contents
-      shell: "ls -la {{ remote_workspace }}"
-      register: dir_contents
-
-    - name: Debug directory contents
-      debug:
-        msg: "Directory contents: {{ dir_contents.stdout_lines }}"
-
     - name: Make gradlew executable
       file:
         path: "{{ remote_workspace }}/gradlew"
         mode: '0755'
 
+    # Run tests with detailed logging
     - name: Run Gradle tests
       shell: |
-        sudo -u jenkins ./gradlew clean test --build-cache
+        sudo -u jenkins ./gradlew clean test --build-cache --info
       args:
         chdir: "{{ remote_workspace }}"
       register: test_result
       ignore_errors: yes
 
+    - name: Display test execution output
+      debug:
+        msg: "{{ test_result.stdout_lines }}"
+      when: test_result.stdout_lines is defined
+
+    - name: Display test errors (if any)
+      debug:
+        msg: "{{ test_result.stderr_lines }}"
+      when: test_result.stderr_lines is defined
+
     - name: Check test results
       fail:
-        msg: "Gradle tests failed: {{ test_result.stderr }}"
+        msg: |
+          Gradle tests failed with return code {{ test_result.rc }}
+          Error output:
+          {{ test_result.stderr }}
+          Standard output:
+          {{ test_result.stdout }}
       when: test_result.rc != 0
     
