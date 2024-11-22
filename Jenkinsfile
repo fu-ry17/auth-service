@@ -12,27 +12,43 @@ pipeline {
     stages {
         stage('Checkout Code') {
             steps {
+                echo "Checking out code from repository..."
                 checkout scm
+                echo "Code checkout complete"
             }
         }
 
         stage('Run Ansible Pipeline') {
             steps {
                 script {
+                    echo "Starting Ansible pipeline execution..."
                     def workspaceDir = sh(script: 'pwd', returnStdout: true).trim()
+                    echo "Workspace directory: ${workspaceDir}"
                     
+                    echo "Determining environment configuration..."
                     def K8_ENV = setEnv()
                     def K8_ENV_SECRET = getK8Secret()
                     def K8_API = setK8Api()
                     def K8_DOMAIN = setK8Domain()
                     def K8_ROUTE = setK8Route()
 
+                    echo """
+                    Environment Configuration:
+                    - Environment: ${K8_ENV}
+                    - Secret: ${K8_ENV_SECRET}
+                    - API: ${K8_API}
+                    - Domain: ${K8_DOMAIN}
+                    - Route: ${K8_ROUTE}
+                    """
+
+                    echo "Getting Docker credentials..."
                     withCredentials([
                         usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')
                     ]) {
                         def dockerUser = sh(script: "echo $DOCKER_CREDS | cut -d':' -f1", returnStdout: true).trim()
                         def dockerPass = sh(script: "echo $DOCKER_CREDS | cut -d':' -f2", returnStdout: true).trim()
                         
+                        echo "Running Ansible playbook..."
                         ansiblePlaybook(
                             credentialsId: 'dev-server',
                             disableHostKeyChecking: true,
@@ -55,18 +71,36 @@ pipeline {
                                      -e 'sonar_url=${SONAR_URL}'
                                      -e 'project_key=${PROJECT_KEY}'"""
                         )
+                        echo "Ansible playbook execution completed"
                     }
                 }
             }
         }
     }
+
+    post {
+        success {
+            echo "Pipeline executed successfully!"
+        }
+        failure {
+            echo "Pipeline failed! Check the logs for details."
+        }
+        always {
+            echo "Pipeline execution completed. Status: ${currentBuild.result}"
+        }
+    }
 }
 
 def setEnv() {
+    echo "Determining environment based on git tag and branch..."
     def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
+    echo "Found git tag: ${ENV_TAG}"
+    
     if (ENV_TAG.contains('-rc')) {
+        echo "RC tag found, setting environment to prod"
         return 'prod'
     } else {
+        echo "Determining environment from branch: ${env.BRANCH_NAME}"
         switch (env.BRANCH_NAME) {
             case 'production':
                 return 'prod'
