@@ -18,7 +18,7 @@ pipeline{
              ansiblePlaybook credentialsId: 'dev-server', 
                 disableHostKeyChecking: true, extras: "", 
                 installation: 'ansible', inventory: 'dev.inv', 
-                playbook: 'deploy-docker.yml', vaultTmpPath: ''
+                playbook: 'deploy-playbook.yml', vaultTmpPath: ''
           }
         }   
       
