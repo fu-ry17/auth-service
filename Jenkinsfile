@@ -8,7 +8,6 @@ pipeline {
         PROJECT_KEY = 'agencify-auth'
         DOCKER_REGISTRY = '10.0.3.224:8003'
         HELM_REPO = 'http://10.0.3.224:8002/repository/agencify-helm-repo/'
-        JAVA_HOME = tool name: 'jdk-17', type: 'jdk'
     }
     
     stages {
