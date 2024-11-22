@@ -27,6 +27,7 @@
     - name: Verify current user
       shell: whoami
       register: current_user
+      
 
     # - name: Show current user
     #   debug:
