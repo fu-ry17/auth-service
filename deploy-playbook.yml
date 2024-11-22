@@ -79,4 +79,46 @@
           Standard output:
           {{ test_result.stdout }}
       when: test_result.rc != 0
+
+    # Quality Gate
+    - name: Run SonarQube analysis
+      shell: |
+        sudo -u jenkins ./gradlew clean test sonar --build-cache --info
+      args:
+        chdir: "{{ remote_workspace }}"
+      register: sonar_result
+      ignore_errors: yes
+      environment:
+        SONAR_TOKEN: "{{ sonar_token | default('') }}"
+
+    - name: Display SonarQube analysis output
+      debug:
+        msg: "{{ sonar_result.stdout_lines }}"
+      when: sonar_result.stdout_lines is defined
+
+    - name: Wait for quality gate result
+      shell: |
+        sleep 10
+        curl -u "{{ sonar_token | default('') }}:" "{{ sonar_url }}/api/qualitygates/project_status?projectKey={{ project_key }}"
+      register: quality_gate_result
+      until: quality_gate_result.stdout | regex_search('"status":"OK"')
+      retries: 10
+      delay: 5
+      ignore_errors: yes
+
+    # Set Image Version
+    - name: Get application version
+      shell: |
+        sudo -u jenkins ./gradlew properties -q | grep 'version:' | grep -v 'kotlin.version:' | awk -F ':' '{print $2}'
+      args:
+        chdir: "{{ remote_workspace }}"
+      register: version_result
+
+    - name: Set app version fact
+      set_fact:
+        app_version: "{{ version_result.stdout | trim }}"
+
+    - name: Display app version
+      debug:
+        msg: "Application version: {{ app_version }}"
     
