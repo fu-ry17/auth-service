@@ -7,6 +7,9 @@
     docker_registry: "{{ docker_registry }}"
     helm_repo: "{{ helm_repo }}"
     env_type: "{{ env_type }}"
+    project_key: "{{ project_key }}"
+    sonar_url: "{{ sonar_url }}"
+    sonar_token: "{{ sonar_token }}"
 
   tasks:
     - name: Print build info
@@ -71,7 +74,7 @@
             echo "Starting SonarQube analysis..."
             ./gradlew sonar \
               -Dsonar.host.url={{ sonar_url }} \
-              -Dsonar.login={{ sonar_token }} \
+              -Dsonar.token={{ sonar_token }} \
               -Dsonar.projectKey={{ project_key }}
           args:
             chdir: "{{ remote_workspace }}"
