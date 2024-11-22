@@ -33,13 +33,23 @@
 
     - name: Create and sync workspace
       block:
-        - name: Create remote workspace directory
+        - name: Create workspace parent directory
           file:
-            path: "{{ remote_workspace }}"
+            path: "/opt/jenkins"
             state: directory
             mode: '0755'
             owner: ubuntu
             group: ubuntu
+          become: yes
+
+        - name: Create remote workspace directory
+          file:
+            path: "{{ remote_workspace }}"
+            state: directory
+            mode: '0777'
+            owner: ubuntu
+            group: ubuntu
+          become: yes
           register: workspace_create
 
         - name: Show workspace status
@@ -52,6 +62,7 @@
             dest: "{{ remote_workspace }}"
             rsync_opts:
               - "--exclude=.git"
+              - "--chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r"
           become: no
           register: sync_result
           ignore_errors: yes
@@ -60,13 +71,15 @@
           debug:
             msg: "{{ 'Sync failed: ' + sync_result.stderr if sync_result.failed else 'Sync completed successfully' }}"
 
-        - name: Set jenkins ownership
+        - name: Set final permissions
           file:
             path: "{{ remote_workspace }}"
             state: directory
             recurse: yes
+            mode: '0755'
             owner: jenkins
             group: jenkins
+          become: yes
           register: ownership_result
           ignore_errors: yes
 
