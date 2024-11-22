@@ -14,6 +14,13 @@
     ssh_key: "{{ ssh_key }}"
 
   tasks:
+    - name: Create SSH key file
+      copy:
+        content: "{{ ssh_key }}"
+        dest: "/tmp/deploy_key"
+        mode: '0600'
+      register: key_file
+
     - name: Print deployment info
       debug:
         msg: |
@@ -30,7 +37,7 @@
           when: env_type == 'dev'
           shell: |
             echo "Deploying to dev environment..."
-            ssh -i {{ ssh_key }} -o StrictHostKeyChecking=no yewa@10.0.3.74 "
+            ssh -o StrictHostKeyChecking=no ubuntu@10.0.3.74 "
               cd /home/ubuntu/agencify-backend && \
               git fetch && \
               git checkout {{ branch_name }} && \
@@ -43,7 +50,7 @@
           when: env_type == 'staging'
           shell: |
             echo "Deploying to staging environment..."
-            ssh -i {{ ssh_key }} -o StrictHostKeyChecking=no ubuntu@10.0.3.85 "
+            ssh -o StrictHostKeyChecking=no ubuntu@10.0.3.85 "
               cd /home/ubuntu/agencify-backend && \
               git fetch && \
               git checkout {{ branch_name }} && \
@@ -100,3 +107,9 @@
         (env_type == 'staging' and staging_deploy is failed) or
         (env_type == 'prod' and prod_deploy is failed)
       failed_when: true 
+
+    - name: Cleanup
+      file:
+        path: "/tmp/deploy_key"
+        state: absent
+      when: key_file.changed 
