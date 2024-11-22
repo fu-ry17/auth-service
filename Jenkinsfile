@@ -35,7 +35,7 @@ pipeline {
                                      -e 'docker_user=${dockerUser}'
                                      -e 'docker_pass=${dockerPass}'
                                      -e 'helm_repo=${env.HELM_REPO}'
-                                     -e 'env_type=${envType}'
+                                     -e 'env_type=${envType}'"""
                         )
                     }
                 }
