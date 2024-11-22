@@ -126,19 +126,41 @@
               - Image name: {{ app_name }}
               - Chart name: {{ chart_name }}
 
-        - name: Create build directory
+        - name: Create build directory on remote
           file:
-            path: "{{ workspace_dir }}/build"
+            path: "{{ remote_workspace }}/build"
             state: directory
             mode: '0755'
           become: yes
 
-        - name: Save app info for next stage
+        - name: Save app info on remote
           shell: |
-            echo "{{ app_version }}" > {{ workspace_dir }}/build/app_version
-            echo "{{ app_name }}" > {{ workspace_dir }}/build/app_name
+            echo "{{ app_version }}" > {{ remote_workspace }}/build/app_version
+            echo "{{ app_name }}" > {{ remote_workspace }}/build/app_name
           args:
             chdir: "{{ remote_workspace }}"
+
+        - name: Create build directory on Jenkins
+          file:
+            path: "{{ workspace_dir }}/build"
+            state: directory
+            mode: '0755'
+          delegate_to: localhost
+          become: no
+
+        - name: Copy files back to Jenkins
+          fetch:
+            src: "{{ remote_workspace }}/build/{{ item }}"
+            dest: "{{ workspace_dir }}/build/{{ item }}"
+            flat: yes
+          with_items:
+            - app_version
+            - app_name
+          become: no
+
+        - name: Show file transfer status
+          debug:
+            msg: "App info files copied back to Jenkins workspace"
 
     - name: Build and push Docker image
       block:
