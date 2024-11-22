@@ -13,19 +13,22 @@ pipeline {
         stage("Build and Test") {
             steps {
                 checkout scm
-                ansiblePlaybook(
-                    credentialsId: 'dev-server',
-                    disableHostKeyChecking: true,
-                    installation: 'ansible',
-                    inventory: 'dev.inv',
-                    playbook: 'deploy-playbook.yml',
-                    extras: """-e 'workspace_dir=${env.WORKSPACE_DIR}' 
-                             -e 'sonar_token=${env.SONAR_TOKEN}' 
-                             -e 'sonar_url=${env.SONAR_URL}' 
-                             -e 'project_key=${env.PROJECT_KEY}'
-                             -e 'docker_registry=${env.DOCKER_REGISTRY}'
-                             -e 'env_type=${env.BRANCH_NAME}'"""
-                )
+                withCredentials([usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')]) {
+                    ansiblePlaybook(
+                        credentialsId: 'dev-server',
+                        disableHostKeyChecking: true,
+                        installation: 'ansible',
+                        inventory: 'dev.inv',
+                        playbook: 'deploy-playbook.yml',
+                        extras: """-e 'workspace_dir=${env.WORKSPACE_DIR}' 
+                                 -e 'sonar_token=${env.SONAR_TOKEN}' 
+                                 -e 'sonar_url=${env.SONAR_URL}' 
+                                 -e 'project_key=${env.PROJECT_KEY}'
+                                 -e 'docker_registry=${env.DOCKER_REGISTRY}'
+                                 -e 'docker_creds=${DOCKER_CREDS}'
+                                 -e 'env_type=${env.BRANCH_NAME}'"""
+                    )
+                }
             }
         }
     }

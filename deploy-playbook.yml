@@ -86,16 +86,51 @@
         chart_name: "{{ chart_name_result.stdout | trim }}"
         app_name: "{{ chart_name_result.stdout | trim }}-{{ env_type | default('dev') }}"
 
-    - name: Build and push Docker image
-      docker_image:
-        build:
-          path: "{{ remote_workspace }}"
-          pull: yes
-        name: "{{ docker_registry }}/{{ app_name }}"
-        tag: "{{ app_version }}"
-        push: yes
-        source: build
+    - name: Configure Docker daemon for insecure registry
+      copy:
+        content: |
+          {
+            "insecure-registries": ["{{ docker_registry }}"]
+          }
+        dest: /etc/docker/daemon.json
+        mode: '0644'
+      register: docker_config
+
+    - name: Restart Docker service if config changed
+      systemd:
+        name: docker
+        state: restarted
+      when: docker_config.changed
+
+    - name: Login to Docker registry
+      shell: |
+        echo {{ docker_creds }} | docker login {{ docker_registry }} --username {{ docker_creds.split(':')[0] }} --password-stdin
+      become: yes
+      no_log: true
+
+    - name: Build Docker image
+      shell: |
+        docker build \
+          --no-cache \
+          --progress=plain \
+          -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} \
+          {{ remote_workspace }}
       register: docker_build
+      become: yes
+
+    - name: Show Docker build logs
+      debug:
+        msg: "{{ docker_build.stdout_lines }}"
+
+    - name: Push Docker image
+      shell: |
+        docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }}
+      register: docker_push
+      become: yes
+
+    - name: Show Docker push logs
+      debug:
+        msg: "{{ docker_push.stdout_lines }}"
 
     - name: Display build info
       debug:
