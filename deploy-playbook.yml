@@ -28,12 +28,6 @@
         update_cache: yes
 
     # Create workspace directory
-    - name: Ensure jenkins user exists
-      user:
-        name: jenkins
-        state: present
-        system: yes
-
     - name: Create remote workspace directory
       file:
         path: "{{ remote_workspace }}"
@@ -50,14 +44,7 @@
         dest: "{{ remote_workspace }}"
         rsync_opts:
           - "--exclude=.git"
-      become: no  # Don't use sudo for rsync
-
-    - name: Fix permissions after sync
-      file:
-        path: "{{ remote_workspace }}"
-        owner: jenkins
-        group: jenkins
-        recurse: yes
+      become: no
 
     # Setup stage tasks
     - name: Pull Gradle Docker image
@@ -89,13 +76,14 @@
       file:
         path: "{{ remote_workspace }}/gradlew"
         mode: '+x'
+      become_user: jenkins
 
     - name: Run Gradle tests
       command: "./gradlew clean test --build-cache"
       args:
         chdir: "{{ remote_workspace }}"
       register: test_result
-      become: jenkins  # Run as jenkins user
+      become_user: jenkins
       ignore_errors: yes
 
     - name: Check test results
