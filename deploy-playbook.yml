@@ -1,0 +1,23 @@
+---
+- hosts: dev
+  become: true
+  tasks:
+    - name: Install python pip
+      apt:
+        name: python3-pip
+        state: present
+        update_cache: yes
+    
+    - name: Install docker-py module
+      apt:
+        name: python3-docker
+        state: present
+        update_cache: yes
+
+    - name: Install java 21
+      apt:
+        name: openjdk-21-jre
+        state: present
+        update_cache: yes
+
+    
