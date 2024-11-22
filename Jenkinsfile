@@ -1,22 +1,32 @@
-@Library('jenkins-shared-library') _
-
 pipeline {
     agent any
-    
+
     environment {
-        WORKSPACE_DIR = sh(script: 'pwd', returnStdout: true).trim()
         DOCKER_REGISTRY = '10.0.3.224:8003'
         HELM_REPO = 'http://10.0.3.224:8002/repository/agencify-helm-repo/'
+        SONAR_TOKEN = 'sqp_0328fe551ffc7bcbb25740fffe0cf3d254b478b7'
+        SONAR_URL = 'https://obokano.agencify.insure/'
+        PROJECT_KEY = 'agencify-auth'
     }
-    
+
     stages {
-        stage('Build and Deploy') {
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Run Ansible Pipeline') {
             steps {
                 script {
-                    def k8sEnv = setEnv()
-                    def k8sDomain = setK8Domain()
-                    def k8sRoute = setK8Route()
+                    def workspaceDir = sh(script: 'pwd', returnStdout: true).trim()
                     
+                    def K8_ENV = setEnv()
+                    def K8_ENV_SECRET = getK8Secret()
+                    def K8_API = setK8Api()
+                    def K8_DOMAIN = setK8Domain()
+                    def K8_ROUTE = setK8Route()
+
                     withCredentials([
                         usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')
                     ]) {
@@ -29,43 +39,113 @@ pipeline {
                             installation: 'ansible',
                             inventory: 'dev.inv',
                             playbook: 'deploy-playbook.yml',
-                            extras: """-e 'workspace_dir=${env.WORKSPACE_DIR}' 
-                                     -e 'docker_registry=${env.DOCKER_REGISTRY}'
+                            extras: """-e 'workspace_dir=${workspaceDir}' 
+                                     -e 'docker_registry=${DOCKER_REGISTRY}'
                                      -e 'docker_user=${dockerUser}'
                                      -e 'docker_pass=${dockerPass}'
-                                     -e 'helm_repo=${env.HELM_REPO}'
-                                     -e 'env_type=${k8sEnv}'
-                                     -e 'k8s_env=${k8sEnv}'
-                                     -e 'k8s_domain=${k8sDomain}'
-                                     -e 'k8s_route=${k8sRoute}'"""
+                                     -e 'helm_repo=${HELM_REPO}'
+                                     -e 'env_type=${K8_ENV}'
+                                     -e 'k8s_env=${K8_ENV}'
+                                     -e 'k8s_secret=${K8_ENV_SECRET}'
+                                     -e 'k8s_api=${K8_API}'
+                                     -e 'k8s_domain=${K8_DOMAIN}'
+                                     -e 'k8s_route=${K8_ROUTE}'
+                                     -e 'branch_name=${env.BRANCH_NAME}'
+                                     -e 'sonar_token=${SONAR_TOKEN}'
+                                     -e 'sonar_url=${SONAR_URL}'
+                                     -e 'project_key=${PROJECT_KEY}'"""
                         )
                     }
                 }
             }
         }
     }
-    
-    post {
-        always {
-            jiraSendBuildInfo()
+}
+
+def setEnv() {
+    def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
+    if (ENV_TAG.contains('-rc')) {
+        return 'prod'
+    } else {
+        switch (env.BRANCH_NAME) {
+            case 'production':
+                return 'prod'
+            case 'preprod':
+                return 'preprod'
+            case 'master':
+                return 'staging'
+            case 'develop':
+                return 'dev'
+            default:
+                return 'dev'
         }
-        success {
-            script {
-                def envType = setEnv()
-                if (envType == 'prod') {
-                    jiraSendDeploymentInfo environmentId: 'production', 
-                                         environmentName: 'production', 
-                                         environmentType: 'production'
-                } else if (envType == 'staging') {
-                    jiraSendDeploymentInfo environmentId: 'staging', 
-                                         environmentName: 'staging', 
-                                         environmentType: 'staging'
-                } else {
-                    jiraSendDeploymentInfo environmentId: 'development', 
-                                         environmentName: 'development', 
-                                         environmentType: 'development'
-                }
-            }
+    }
+}
+
+def getK8Secret() {
+    def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
+    if (ENV_TAG.contains('-rc')) {
+        return 'k8sonprodNS-prod'
+    } else {
+        switch (env.BRANCH_NAME) {
+            case 'production':
+                return 'k8sonprodNS-prod'
+            case 'preprod':
+                return 'k8sonPreprodNS-Preprod'
+            case 'master':
+                return 'k8sonNewDevNS-Staging'
+            case 'develop':
+                return 'k8sonNewDevNS-Dev'
+            default:
+                return 'k8sonNewDevNS-Dev'
+        }
+    }
+}
+
+def setK8Api() {
+    def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
+    if (ENV_TAG.contains('-rc')) {
+        return 'https://10.0.4.212:6443'
+    } else {
+        switch (env.BRANCH_NAME) {
+            case 'production':
+            case 'preprod':
+                return 'https://10.0.4.212:6443'
+            default:
+                return 'https://10.0.3.149:6443'
+        }
+    }
+}
+
+def setK8Domain() {
+    def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
+    if (ENV_TAG.contains('-rc')) {
+        return 'bozomu.agencify.insure'
+    } else {
+        switch (env.BRANCH_NAME) {
+            case 'production':
+            case 'preprod':
+                return 'bozomu.agencify.insure'
+            default:
+                return 'janzi.agencify.insure'
+        }
+    }
+}
+
+def setK8Route() {
+    def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
+    if (ENV_TAG.contains('-rc')) {
+        return '/prod'
+    } else {
+        switch (env.BRANCH_NAME) {
+            case 'production':
+                return '/prod'
+            case 'preprod':
+                return '/preprod'
+            case 'master':
+                return '/staging/v1'
+            default:
+                return '/api'
         }
     }
 }

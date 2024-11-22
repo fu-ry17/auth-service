@@ -7,7 +7,12 @@
     docker_registry: "{{ docker_registry }}"
     helm_repo: "{{ helm_repo }}"
     k8s_env: "{{ k8s_env }}"
-    env_type: "{{ env_type }}"
+    k8s_secret: "{{ k8s_secret }}"
+    k8s_api: "{{ k8s_api }}"
+    branch_name: "{{ branch_name }}"
+    sonar_token: "{{ sonar_token }}"
+    sonar_url: "{{ sonar_url }}"
+    project_key: "{{ project_key }}"
 
   tasks:
     - name: Create and sync workspace
@@ -54,7 +59,8 @@
         - name: Set image facts
           set_fact:
             app_version: "{{ version_result.stdout | trim }}"
-            app_name: "{{ chart_name_result.stdout | trim }}-{{ env_type }}"
+            app_name: "{{ chart_name_result.stdout | trim }}-{{ k8s_env }}"
+            chart_name: "{{ chart_name_result.stdout | trim }}"
 
     - name: Build and push Docker image
       block:
@@ -79,11 +85,13 @@
       block:
         - name: Package Helm chart
           shell: |
-            docker run --rm -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm package charts/ --app-version {{ app_version }} --version {{ app_version }}
+            sudo helm package charts/ --app-version {{ app_version }} --version {{ app_version }}
+          args:
+            chdir: "{{ remote_workspace }}"
 
         - name: Push Helm chart
           shell: |
-            curl -u {{ docker_user }}:{{ docker_pass }} {{ helm_repo }} --upload-file {{ app_name }}-{{ app_version }}.tgz -v
+            curl -u {{ docker_user }}:{{ docker_pass }} {{ helm_repo }} --upload-file {{ chart_name }}-{{ app_version }}.tgz -v
           args:
             chdir: "{{ remote_workspace }}"
 
@@ -93,9 +101,9 @@
           when: k8s_env != 'prod'
           shell: |
             {% if k8s_env == 'dev' %}
-            ssh ubuntu@10.0.3.74 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ env_type }} && git pull origin {{ env_type }} --rebase && sudo docker compose up -d'
+            ssh ubuntu@10.0.3.74 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ branch_name }} && git pull origin {{ branch_name }} --rebase && sudo docker compose up -d'
             {% elif k8s_env == 'staging' %}
-            ssh ubuntu@10.0.3.85 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ env_type }} && git pull origin {{ env_type }} --rebase && sudo docker compose -f staging-compose.yml up -d'
+            ssh ubuntu@10.0.3.85 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ branch_name }} && git pull origin {{ branch_name }} --rebase && sudo docker compose -f staging-compose.yml up -d'
             {% endif %}
 
         - name: Deploy to production
@@ -111,4 +119,18 @@
               --set ingress.domain='{{ k8s_domain }}' \
               --set ingress.route='{{ k8s_route }}' \
               {{ app_name }} charts/ -n {{ k8s_env }}
+
+    - name: Run SonarQube Analysis
+      block:
+        - name: Execute SonarQube scan
+          shell: |
+            ./gradlew sonar \
+              -Dsonar.host.url={{ sonar_url }} \
+              -Dsonar.login={{ sonar_token }} \
+              -Dsonar.projectKey={{ project_key }}
+          args:
+            chdir: "{{ remote_workspace }}"
+          environment:
+            SONAR_TOKEN: "{{ sonar_token }}"
+          when: test_result.rc == 0
     
