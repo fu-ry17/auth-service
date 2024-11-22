@@ -6,7 +6,7 @@
     remote_workspace: "/opt/jenkins/workspace/auth-service"
     docker_registry: "{{ docker_registry }}"
     helm_repo: "{{ helm_repo }}"
-    k8s_env: "{{ k8s_env }}"
+    env_type: "{{ env_type }}"
 
   tasks:
     - name: Create and sync workspace
@@ -53,7 +53,7 @@
         - name: Set image facts
           set_fact:
             app_version: "{{ version_result.stdout | trim }}"
-            app_name: "{{ chart_name_result.stdout | trim }}-{{ k8s_env }}"
+            app_name: "{{ chart_name_result.stdout | trim }}-{{ env_type }}"
             chart_name: "{{ chart_name_result.stdout | trim }}"
 
     - name: Build and push Docker image
