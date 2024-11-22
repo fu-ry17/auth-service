@@ -9,6 +9,15 @@
     env_type: "{{ env_type }}"
 
   tasks:
+    - name: Print build info
+      debug:
+        msg: |
+          Starting deployment with:
+          - Environment: {{ env_type }}
+          - Workspace: {{ workspace_dir }}
+          - Remote workspace: {{ remote_workspace }}
+          - Docker registry: {{ docker_registry }}
+
     - name: Create and sync workspace
       block:
         - name: Create remote workspace directory
@@ -18,6 +27,11 @@
             mode: '0755'
             owner: ubuntu
             group: ubuntu
+          register: workspace_create
+
+        - name: Show workspace creation status
+          debug:
+            msg: "Workspace directory {{ 'created' if workspace_create.changed else 'already exists' }}"
 
         - name: Synchronize workspace
           synchronize:
@@ -26,15 +40,39 @@
             rsync_opts:
               - "--exclude=.git"
           become: no
+          register: sync_result
+
+        - name: Show sync status
+          debug:
+            msg: "Workspace sync completed. Changed files: {{ sync_result.changed }}"
 
     - name: Run unit tests
-      shell: |
-        chmod +x gradlew
-        ./gradlew clean test --build-cache
-      args:
-        chdir: "{{ remote_workspace }}"
-      register: test_result
-      failed_when: test_result.rc != 0
+      block:
+        - name: Execute Gradle tests
+          shell: |
+            chmod +x gradlew
+            ./gradlew clean test --build-cache
+          args:
+            chdir: "{{ remote_workspace }}"
+          register: test_result
+          failed_when: test_result.rc != 0
+
+        - name: Show test results
+          debug:
+            msg: |
+              Test execution completed:
+              Return code: {{ test_result.rc }}
+              {{ test_result.stdout_lines | default([]) }}
+          when: test_result.rc == 0
+
+        - name: Show test errors
+          debug:
+            msg: |
+              Test execution failed:
+              Return code: {{ test_result.rc }}
+              Errors: {{ test_result.stderr_lines | default([]) }}
+          when: test_result.rc != 0
+          failed_when: true
 
     - name: Set version and image info
       block:
@@ -56,33 +94,83 @@
             app_name: "{{ chart_name_result.stdout | trim }}-{{ env_type }}"
             chart_name: "{{ chart_name_result.stdout | trim }}"
 
+        - name: Show build info
+          debug:
+            msg: |
+              Build information:
+              - Application version: {{ app_version }}
+              - Image name: {{ app_name }}
+              - Chart name: {{ chart_name }}
+
     - name: Build and push Docker image
       block:
         - name: Login to Docker registry
           shell: |
             docker login {{ docker_registry }} -u {{ docker_user }} -p {{ docker_pass }}
           no_log: true
+          register: docker_login
+          
+        - name: Show Docker login status
+          debug:
+            msg: "Docker login {{ 'successful' if docker_login.rc == 0 else 'failed' }}"
 
         - name: Build and push Docker images
           shell: |
+            echo "Building Docker image..."
             docker build \
               -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} \
               -t {{ docker_registry }}/{{ app_name }}:latest \
               {{ remote_workspace }} && \
+            echo "Pushing version {{ app_version }}..." && \
             docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }} && \
+            echo "Pushing latest tag..." && \
             docker push {{ docker_registry }}/{{ app_name }}:latest
+          register: docker_build
+          
+        - name: Show Docker build status
+          debug:
+            msg: |
+              Docker build and push completed:
+              {{ docker_build.stdout_lines | default([]) }}
+          when: docker_build.rc == 0
+
+        - name: Show Docker build errors
+          debug:
+            msg: |
+              Docker build failed:
+              {{ docker_build.stderr_lines | default([]) }}
+          when: docker_build.rc != 0
+          failed_when: true
 
     - name: Package and push Helm chart
       block:
         - name: Package and push Helm chart
           shell: |
+            echo "Packaging Helm chart..."
             docker run --rm \
               -v {{ remote_workspace }}:/app \
               -w /app \
               dtzar/helm-kubectl \
               helm package charts/ --app-version {{ app_version }} --version {{ app_version }} && \
+            echo "Pushing Helm chart to repository..." && \
             curl -u {{ docker_user }}:{{ docker_pass }} {{ helm_repo }} --upload-file {{ chart_name }}-{{ app_version }}.tgz -v
           args:
             chdir: "{{ remote_workspace }}"
+          register: helm_result
+
+        - name: Show Helm operation status
+          debug:
+            msg: |
+              Helm operations completed:
+              {{ helm_result.stdout_lines | default([]) }}
+          when: helm_result.rc == 0
+
+        - name: Show Helm operation errors
+          debug:
+            msg: |
+              Helm operations failed:
+              {{ helm_result.stderr_lines | default([]) }}
+          when: helm_result.rc != 0
+          failed_when: true
 
   
