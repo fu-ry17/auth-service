@@ -11,6 +11,7 @@
     k8s_domain: "{{ k8s_domain | default('janzi.agencify.insure') }}"
     k8s_route: "{{ k8s_route | default('/api') }}"
     docker_registry: "{{ docker_registry }}"
+    git_repo: "https://github.com/fu-ry17/auth-service.git"
 
   tasks:
     - name: Print deployment info
@@ -29,25 +30,30 @@
           when: env_type == 'dev'
           shell: |
             echo "Starting deployment to dev environment at $(date)"
-            echo "Step 1: Changing to backend directory..."
+            
+            echo "Step 1: Setting up Git..."
+            git config --global --add safe.directory '*'
+            
+            echo "Step 2: Changing to backend directory..."
+            if [ ! -d "/home/ubuntu/agencify-backend" ]; then
+              echo "Directory doesn't exist, cloning repository..."
+              git clone {{ git_repo }} /home/ubuntu/agencify-backend
+            fi
             cd /home/ubuntu/agencify-backend || { echo "Failed to change directory"; exit 1; }
             
-            echo "Step 2: Fetching latest changes..."
+            echo "Step 3: Fetching latest changes..."
             timeout 60 git fetch || { echo "Git fetch timed out after 60s"; exit 1; }
             
-            echo "Step 3: Checking out branch {{ branch_name }}..."
+            echo "Step 4: Checking out branch {{ branch_name }}..."
             timeout 30 git checkout {{ branch_name }} || { echo "Git checkout timed out after 30s"; exit 1; }
             
-            echo "Step 4: Pulling latest changes..."
+            echo "Step 5: Pulling latest changes..."
             timeout 60 git pull origin {{ branch_name }} --rebase || { echo "Git pull timed out after 60s"; exit 1; }
             
-            echo "Step 5: Stopping existing containers..."
-            sudo docker compose down || echo "No containers to stop"
-            
-            echo "Step 6: Starting new containers..."
+            echo "Step 7: Starting new containers..."
             timeout 300 sudo docker compose up -d || { echo "Docker compose timed out after 300s"; exit 1; }
             
-            echo "Step 7: Waiting for containers to be healthy..."
+            echo "Step 8: Waiting for containers to be healthy..."
             for i in {1..30}; do
               if sudo docker compose ps | grep -q "healthy"; then
                 echo "Containers are healthy"
@@ -63,8 +69,8 @@
             
             echo "Deployment completed successfully at $(date)"
           register: dev_deploy
-          async: 600  # 10 minutes total timeout
-          poll: 10    # Check every 10 seconds
+          async: 600
+          poll: 10
 
         - name: Show detailed deployment progress
           debug:
