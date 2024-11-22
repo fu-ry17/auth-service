@@ -51,8 +51,7 @@ pipeline {
                     echo "Deploying to environment: ${envType} using branch: ${branchName}"
                     
                     withCredentials([
-                        usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS'),
-                        sshUserPrivateKey(credentialsId: 'dev-ssh-key', keyFileVariable: 'SSH_KEY')
+                        usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')
                     ]) {
                         def dockerUser = sh(script: "echo $DOCKER_CREDS | cut -d':' -f1", returnStdout: true).trim()
                         def dockerPass = sh(script: "echo $DOCKER_CREDS | cut -d':' -f2", returnStdout: true).trim()
