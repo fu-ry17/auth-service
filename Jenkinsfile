@@ -7,6 +7,7 @@ pipeline {
         SONAR_URL = 'https://obokano.agencify.insure/'
         PROJECT_KEY = 'agencify-auth'
         DOCKER_REGISTRY = '10.0.3.224:8003'
+        HELM_REPO = 'http://10.0.3.224:8002/repository/agencify-helm-repo/'
     }
     
     stages {
@@ -33,6 +34,7 @@ pipeline {
                                      -e 'docker_registry=${env.DOCKER_REGISTRY}'
                                      -e 'docker_user=${dockerUser}'
                                      -e 'docker_pass=${dockerPass}'
+                                     -e 'helm_repo=${env.HELM_REPO}'
                                      -e 'env_type=${branchName}'"""
                         )
                     }

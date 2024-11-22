@@ -5,6 +5,7 @@
     workspace_dir: "{{ workspace_dir | default(ansible_env.WORKSPACE) }}"
     remote_workspace: "/opt/jenkins/workspace/auth-service"
     docker_registry: "{{ docker_registry }}"
+    helm_repo: "http://10.0.3.224:8002/repository/agencify-helm-repo/"
 
   tasks:
     - name: Create and sync workspace
@@ -91,4 +92,26 @@
           debug:
             msg: "Successfully built and pushed: {{ docker_registry }}/{{ app_name }}:{{ app_version }}"
           when: docker_build.rc == 0
+
+    - name: Package and push Helm chart
+      block:
+        - name: Package Helm chart
+          shell: |
+            sudo helm package charts/ --app-version {{ app_version }} --version {{ app_version }}
+          args:
+            chdir: "{{ remote_workspace }}"
+          register: helm_package
+
+        - name: Debug Helm package
+          shell: |
+            pwd
+            ls -l {{ chart_name_result.stdout | trim }}-{{ app_version }}.tgz
+          args:
+            chdir: "{{ remote_workspace }}"
+
+        - name: Push Helm chart to repository
+          shell: |
+            curl -u {{ docker_user }}:{{ docker_pass }} {{ helm_repo }} --upload-file {{ chart_name_result.stdout | trim }}-{{ app_version }}.tgz -v
+          args:
+            chdir: "{{ remote_workspace }}"
     
