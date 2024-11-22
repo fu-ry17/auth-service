@@ -86,84 +86,84 @@
           args:
             chdir: "{{ remote_workspace }}"
 
-    - name: Deploy to dev environment
-      when: k8s_env == 'dev'
-      block:
-        - name: Print deployment info
-          debug:
-            msg: |
-              Starting deployment with:
-              - Environment: {{ k8s_env }}
-              - Branch: {{ branch_name | default('develop') }}
-              - Target Server: 10.0.3.74
-              - Workspace: {{ remote_workspace }}
+    # - name: Deploy to dev environment
+    #   when: k8s_env == 'dev'
+    #   block:
+    #     - name: Print deployment info
+    #       debug:
+    #         msg: |
+    #           Starting deployment with:
+    #           - Environment: {{ k8s_env }}
+    #           - Branch: {{ branch_name | default('develop') }}
+    #           - Target Server: 10.0.3.74
+    #           - Workspace: {{ remote_workspace }}
 
-        - name: Add SSH host key
-          shell: |
-            ssh-keyscan -H 10.0.3.74 >> ~/.ssh/known_hosts
-          changed_when: false
+    #     - name: Add SSH host key
+    #       shell: |
+    #         ssh-keyscan -H 10.0.3.74 >> ~/.ssh/known_hosts
+    #       changed_when: false
 
-        - name: Execute dev deployment
-          shell: |
-            set -x  # Enable command tracing
-            echo "Starting SSH connection to 10.0.3.74..."
-            ssh -o StrictHostKeyChecking=no ubuntu@10.0.3.74 "
-              set -x  # Enable command tracing inside SSH
-              pwd
-              echo 'Current directory: \$(pwd)'
-              echo 'Starting deployment...'
-              cd /home/ubuntu/agencify-backend || { echo 'Failed to change directory'; exit 1; }
-              echo 'Current directory after cd: \$(pwd)'
-              echo 'Fetching latest changes...'
-              git fetch || { echo 'Git fetch failed'; exit 1; }
-              echo 'Checking out branch {{ branch_name | default('develop') }}...'
-              git checkout {{ branch_name | default('develop') }} || { echo 'Git checkout failed'; exit 1; }
-              echo 'Pulling latest changes...'
-              git pull origin {{ branch_name | default('develop') }} --rebase || { echo 'Git pull failed'; exit 1; }
-              echo 'Starting docker compose...'
-              sudo docker compose up -d || { echo 'Docker compose failed'; exit 1; }
-              echo 'Deployment completed successfully'
-            " 2>&1 | tee /tmp/deploy.log
-          args:
-            executable: /bin/bash
-          register: deploy_result
-          ignore_errors: yes
-          async: 300
-          poll: 10
+    #     - name: Execute dev deployment
+    #       shell: |
+    #         set -x  # Enable command tracing
+    #         echo "Starting SSH connection to 10.0.3.74..."
+    #         ssh -o StrictHostKeyChecking=no ubuntu@10.0.3.74 "
+    #           set -x  # Enable command tracing inside SSH
+    #           pwd
+    #           echo 'Current directory: \$(pwd)'
+    #           echo 'Starting deployment...'
+    #           cd /home/ubuntu/agencify-backend || { echo 'Failed to change directory'; exit 1; }
+    #           echo 'Current directory after cd: \$(pwd)'
+    #           echo 'Fetching latest changes...'
+    #           git fetch || { echo 'Git fetch failed'; exit 1; }
+    #           echo 'Checking out branch {{ branch_name | default('develop') }}...'
+    #           git checkout {{ branch_name | default('develop') }} || { echo 'Git checkout failed'; exit 1; }
+    #           echo 'Pulling latest changes...'
+    #           git pull origin {{ branch_name | default('develop') }} --rebase || { echo 'Git pull failed'; exit 1; }
+    #           echo 'Starting docker compose...'
+    #           sudo docker compose up -d || { echo 'Docker compose failed'; exit 1; }
+    #           echo 'Deployment completed successfully'
+    #         " 2>&1 | tee /tmp/deploy.log
+    #       args:
+    #         executable: /bin/bash
+    #       register: deploy_result
+    #       ignore_errors: yes
+    #       async: 300
+    #       poll: 10
 
-        - name: Show deployment progress
-          debug:
-            msg: "{{ deploy_result }}"
+    #     - name: Show deployment progress
+    #       debug:
+    #         msg: "{{ deploy_result }}"
 
-        - name: Show deployment error
-          when: deploy_result.rc != 0 or deploy_result.failed is defined
-          debug:
-            msg: |
-              Deployment failed:
-              Return code: {{ deploy_result.rc | default('N/A') }}
-              Error details: {{ deploy_result.stderr | default('No error details') }}
-              Command output: {{ deploy_result.stdout | default('No output') }}
-              Start time: {{ deploy_result.start | default('Unknown') }}
-              End time: {{ deploy_result.end | default('Unknown') }}
-              Duration: {{ deploy_result.delta | default('Unknown') }}
-          failed_when: true
+    #     - name: Show deployment error
+    #       when: deploy_result.rc != 0 or deploy_result.failed is defined
+    #       debug:
+    #         msg: |
+    #           Deployment failed:
+    #           Return code: {{ deploy_result.rc | default('N/A') }}
+    #           Error details: {{ deploy_result.stderr | default('No error details') }}
+    #           Command output: {{ deploy_result.stdout | default('No output') }}
+    #           Start time: {{ deploy_result.start | default('Unknown') }}
+    #           End time: {{ deploy_result.end | default('Unknown') }}
+    #           Duration: {{ deploy_result.delta | default('Unknown') }}
+    #       failed_when: true
 
-        - name: Show deployment success
-          when: deploy_result.rc == 0 and deploy_result.failed is not defined
-          debug:
-            msg: |
-              Deployment completed successfully:
-              Output: {{ deploy_result.stdout }}
-              Duration: {{ deploy_result.delta | default('Unknown') }}
+    #     - name: Show deployment success
+    #       when: deploy_result.rc == 0 and deploy_result.failed is not defined
+    #       debug:
+    #         msg: |
+    #           Deployment completed successfully:
+    #           Output: {{ deploy_result.stdout }}
+    #           Duration: {{ deploy_result.delta | default('Unknown') }}
 
-        - name: Display deployment log
-          shell: "cat /tmp/deploy.log"
-          register: deploy_log
-          when: deploy_result.rc != 0 or deploy_result.failed is defined
+    #     - name: Display deployment log
+    #       shell: "cat /tmp/deploy.log"
+    #       register: deploy_log
+    #       when: deploy_result.rc != 0 or deploy_result.failed is defined
 
-        - name: Show deployment log
-          debug:
-            msg: "{{ deploy_log.stdout_lines }}"
-          when: deploy_result.rc != 0 or deploy_result.failed is defined
+    #     - name: Show deployment log
+    #       debug:
+    #         msg: "{{ deploy_log.stdout_lines }}"
+    #       when: deploy_result.rc != 0 or deploy_result.failed is defined
 
           
