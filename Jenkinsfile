@@ -49,7 +49,9 @@ pipeline {
                                      -e 'branch_name=${BRANCH_NAME}'
                                      -e 'sonar_token=${SONAR_TOKEN}'
                                      -e 'sonar_url=${SONAR_URL}'
-                                     -e 'project_key=${PROJECT_KEY}'"""
+                                     -e 'project_key=${PROJECT_KEY}'""",
+                            colorized: true,
+                            extraVars: [ansible_verbosity: 3]
                         )
                     }
                 }
