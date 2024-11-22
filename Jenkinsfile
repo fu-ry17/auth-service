@@ -23,7 +23,7 @@ pipeline {
                 script {
                     echo "Starting Ansible pipeline execution..."
                     def workspaceDir = sh(script: 'pwd', returnStdout: true).trim()
-                    echo "Workspace directory: ${workspaceDir}"
+                    echo "Current branch: ${env.BRANCH_NAME}"
                     
                     echo "Determining environment configuration..."
                     def K8_ENV = setEnv()
