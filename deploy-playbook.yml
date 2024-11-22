@@ -27,14 +27,36 @@
           file:
             path: "{{ remote_workspace }}"
             state: directory
-            mode: '0755'
+            mode: '0777'
             owner: ubuntu
             group: ubuntu
           register: workspace_create
 
+        - name: Create build directory
+          file:
+            path: "{{ remote_workspace }}/build"
+            state: directory
+            mode: '0777'
+            owner: ubuntu
+            group: ubuntu
+          register: build_dir_create
+
         - name: Show workspace creation status
           debug:
-            msg: "Workspace directory {{ 'created' if workspace_create.changed else 'already exists' }}"
+            msg: |
+              Workspace status:
+              - Main directory: {{ 'created' if workspace_create.changed else 'already exists' }}
+              - Build directory: {{ 'created' if build_dir_create.changed else 'already exists' }}
+
+        - name: Set workspace permissions recursively
+          shell: |
+            sudo chown -R ubuntu:ubuntu {{ remote_workspace }}
+            sudo chmod -R 777 {{ remote_workspace }}
+          register: perm_result
+
+        - name: Show permission update status
+          debug:
+            msg: "Permissions updated for workspace"
 
         - name: Synchronize workspace
           synchronize:
@@ -42,6 +64,7 @@
             dest: "{{ remote_workspace }}"
             rsync_opts:
               - "--exclude=.git"
+              - "--chmod=ugo=rwX"
           become: no
           register: sync_result
 
