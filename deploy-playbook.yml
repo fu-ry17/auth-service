@@ -6,6 +6,13 @@
     remote_workspace: "/opt/jenkins/workspace/auth-service"
     docker_registry: "{{ docker_registry }}"
     helm_repo: "{{ helm_repo }}"
+    env_type: "{{ env_type }}"
+    docker_user: "{{ docker_user }}"
+    docker_pass: "{{ docker_pass }}"
+    k8s_domain: "{{ k8s_domain }}"
+    k8s_route: "{{ k8s_route }}"
+    k8s_env_secret: "{{ k8s_env_secret }}"
+    k8s_api: "{{ k8s_api }}"
 
   tasks:
     - name: Setup environment
