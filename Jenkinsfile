@@ -15,24 +15,21 @@ pipeline {
         
         stage("Deploy with Ansible") {
             steps {
-                ansiblePlaybook(
-                    credentialsId: 'dev-server',
-                    disableHostKeyChecking: true,
-                    installation: 'ansible',
-                    inventory: 'dev.inv',
-                    playbook: 'deploy-playbook.yml',
-                    extras: "-e workspace_dir=${env.WORKSPACE_DIR}"
-                )
+                script {
+                    echo "Workspace directory: ${env.WORKSPACE_DIR}"
+                    ansiblePlaybook(
+                        credentialsId: 'dev-server',
+                        disableHostKeyChecking: true,
+                        installation: 'ansible',
+                        inventory: 'dev.inv',
+                        playbook: 'deploy-playbook.yml',
+                        extras: "-e 'workspace_dir=${env.WORKSPACE_DIR}'"
+                    )
+                }
             }
         }
     }
 }
-
-def get_version() {
-    def commitHash = sh(returnStdout: true, script: 'git rev-parse --short HEAD')
-    return commitHash
-}
-
 
 
 

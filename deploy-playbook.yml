@@ -40,23 +40,27 @@
         force_source: yes
 
     # Unit Test stage tasks
-    - name: Find workspace directory
-      shell: ls -d */ | head -n 1
-      register: workspace_dir_result
+    - name: Debug workspace directory
+      debug:
+        msg: "Current workspace directory: {{ workspace_dir }}"
 
-    - name: Set workspace directory fact
-      set_fact:
-        project_dir: "{{ workspace_dir }}/{{ workspace_dir_result.stdout_lines[0] | trim }}"
+    - name: List directory contents
+      shell: "ls -la {{ workspace_dir }}"
+      register: dir_contents
+
+    - name: Debug directory contents
+      debug:
+        msg: "Directory contents: {{ dir_contents.stdout_lines }}"
 
     - name: Make gradlew executable
       file:
-        path: "{{ project_dir }}/gradlew"
+        path: "{{ workspace_dir }}/gradlew"
         mode: '+x'
 
     - name: Run Gradle tests
       command: "./gradlew clean test --build-cache"
       args:
-        chdir: "{{ project_dir }}"
+        chdir: "{{ workspace_dir }}"
       register: test_result
       ignore_errors: yes
 
