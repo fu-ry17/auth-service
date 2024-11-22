@@ -1,0 +1,144 @@
+---
+- hosts: dev
+  become: true
+  vars:
+    workspace_dir: "{{ workspace_dir | default(ansible_env.WORKSPACE) }}"
+    remote_workspace: "/opt/jenkins/workspace/auth-service"
+    docker_registry: "{{ docker_registry }}"
+    helm_repo: "{{ helm_repo }}"
+
+  tasks:
+    - name: Create and sync workspace
+      block:
+        - name: Create remote workspace directory
+          file:
+            path: "{{ remote_workspace }}"
+            state: directory
+            mode: '0755'
+            owner: ubuntu
+            group: ubuntu
+
+        - name: Synchronize workspace
+          synchronize:
+            src: "{{ workspace_dir }}/"
+            dest: "{{ remote_workspace }}"
+            rsync_opts:
+              - "--exclude=.git"
+          become: no
+
+        - name: Set jenkins ownership
+          file:
+            path: "{{ remote_workspace }}"
+            state: directory
+            recurse: yes
+            owner: jenkins
+            group: jenkins
+
+    - name: Run tests and analysis
+      block:
+        - name: Run Gradle tests
+          shell: |
+            sudo -u jenkins ./gradlew clean test --build-cache --quiet
+          args:
+            chdir: "{{ remote_workspace }}"
+          register: test_result
+
+        - name: Run SonarQube analysis
+          shell: |
+            sudo -u jenkins ./gradlew sonar --quiet
+          args:
+            chdir: "{{ remote_workspace }}"
+          environment:
+            SONAR_TOKEN: "{{ sonar_token | default('') }}"
+          when: test_result.rc == 0
+
+    - name: Prepare image info
+      block:
+        - name: Get application version
+          shell: |
+            sudo -u jenkins ./gradlew properties -q | grep '^version:' | awk '{print $2}'
+          args:
+            chdir: "{{ remote_workspace }}"
+          register: version_result
+
+        - name: Get chart name
+          shell: |
+            docker run -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm show chart ./charts | grep name | cut -d: -f 2 | tr -d ' '
+          register: chart_name_result
+
+        - name: Set image facts
+          set_fact:
+            app_version: "{{ version_result.stdout | trim }}"
+            app_name: "{{ chart_name_result.stdout | trim }}-{{ env_type | default('dev') | lower }}"
+
+    - name: Build and push image
+      block:
+        - name: Login to Docker registry
+          shell: |
+            docker login {{ docker_registry }} -u {{ docker_user }} -p {{ docker_pass }}
+          no_log: true
+
+        - name: Display build start
+          debug:
+            msg: "Starting Docker build for {{ docker_registry }}/{{ app_name }}"
+
+        - name: Build Docker image with tags
+          shell: |
+            docker build \
+              -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} \
+              -t {{ docker_registry }}/{{ app_name }}:latest \
+              {{ remote_workspace }}
+          register: docker_build
+
+        - name: Show build completion
+          debug:
+            msg: "Docker build completed successfully"
+          when: docker_build.rc == 0
+
+        - name: Push Docker image with version tag
+          shell: |
+            docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }}
+          register: version_push
+
+        - name: Push Docker image with latest tag
+          shell: |
+            docker push {{ docker_registry }}/{{ app_name }}:latest
+          register: latest_push
+          when: version_push.rc == 0
+
+        - name: Display push summary
+          debug:
+            msg: 
+              - "Successfully pushed images:"
+              - "  - {{ docker_registry }}/{{ app_name }}:{{ app_version }}"
+              - "  - {{ docker_registry }}/{{ app_name }}:latest"
+          when: latest_push.rc == 0
+
+      rescue:
+        - name: Display build failure
+          debug:
+            msg: "Docker build/push failed. Check the logs for details."
+          failed_when: true
+
+    - name: Package and push Helm chart
+      block:
+        - name: Package Helm chart
+          shell: |
+            docker run --rm -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm package charts/ --app-version {{ app_version }} --version {{ app_version }}
+          args:
+            chdir: "{{ remote_workspace }}"
+          register: helm_package
+
+        - name: Debug Helm package
+          shell: |
+            pwd
+            ls -l {{ chart_name_result.stdout | trim }}-{{ app_version }}.tgz
+          args:
+            chdir: "{{ remote_workspace }}"
+
+        - name: Push Helm chart to repository
+          shell: |
+            curl -u {{ docker_user }}:{{ docker_pass }} {{ helm_repo }} --upload-file {{ chart_name_result.stdout | trim }}-{{ app_version }}.tgz -v
+          args:
+            chdir: "{{ remote_workspace }}"
+    
