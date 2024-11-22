@@ -11,7 +11,6 @@
     k8s_domain: "{{ k8s_domain | default('janzi.agencify.insure') }}"
     k8s_route: "{{ k8s_route | default('/api') }}"
     docker_registry: "{{ docker_registry }}"
-    git_repo: "https://github.com/fu-ry17/auth-service.git"
 
   tasks:
     - name: Print deployment info
@@ -29,170 +28,53 @@
         - name: Deploy to dev
           when: env_type == 'dev'
           shell: |
-            echo "Starting deployment to dev environment at $(date)"
+            echo "Starting deployment at $(date)"
+            cd /home/ubuntu/agencify-backend
             
-            echo "Step 1: Setting up Git..."
-            git config --global --add safe.directory '*'
+            echo "Current Git status:"
+            git status
             
-            echo "Step 2: Changing to backend directory..."
-            if [ ! -d "/home/ubuntu/agencify-backend" ]; then
-              echo "Directory doesn't exist, cloning repository..."
-              git clone {{ git_repo }} /home/ubuntu/agencify-backend
-            fi
-            cd /home/ubuntu/agencify-backend || { echo "Failed to change directory"; exit 1; }
+            echo "Fetching latest changes..."
+            git fetch
             
-            echo "Step 3: Fetching latest changes..."
-            timeout 60 git fetch || { echo "Git fetch timed out after 60s"; exit 1; }
+            echo "Checking out branch {{ branch_name }}..."
+            git checkout {{ branch_name }}
             
-            echo "Step 4: Checking out branch {{ branch_name }}..."
-            timeout 30 git checkout {{ branch_name }} || { echo "Git checkout timed out after 30s"; exit 1; }
+            echo "Pulling latest changes..."
+            git pull origin {{ branch_name }} --rebase
             
-            echo "Step 5: Pulling latest changes..."
-            timeout 60 git pull origin {{ branch_name }} --rebase || { echo "Git pull timed out after 60s"; exit 1; }
+            echo "Git status after pull:"
+            git status
             
-            echo "Step 7: Starting new containers..."
-            timeout 300 sudo docker compose up -d || { echo "Docker compose timed out after 300s"; exit 1; }
+            echo "Stopping existing containers..."
+            sudo docker compose down || echo "No containers to stop"
             
-            echo "Step 8: Waiting for containers to be healthy..."
-            for i in {1..30}; do
-              if sudo docker compose ps | grep -q "healthy"; then
-                echo "Containers are healthy"
-                break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "Timeout waiting for containers to be healthy"
-                exit 1
-              fi
-              echo "Waiting for containers to be healthy (attempt $i/30)..."
-              sleep 10
-            done
+            echo "Starting new containers..."
+            sudo docker compose up -d
             
-            echo "Deployment completed successfully at $(date)"
+            echo "Container status:"
+            sudo docker compose ps
+            
+            echo "Deployment completed at $(date)"
           register: dev_deploy
-          async: 600
-          poll: 10
 
-        - name: Show detailed deployment progress
+        - name: Show deployment status
           debug:
             msg: |
-              Deployment Status for {{ env_type }}:
+              Deployment Status:
               Start Time: {{ dev_deploy.start | default('Unknown') }}
               End Time: {{ dev_deploy.end | default('Unknown') }}
               Duration: {{ dev_deploy.delta | default('Unknown') }}
               
               Output:
               {{ dev_deploy.stdout_lines | default([]) }}
-              
-              Errors (if any):
-              {{ dev_deploy.stderr_lines | default([]) }}
-          when: env_type == 'dev'
+          when: dev_deploy is success
 
-        - name: Deploy to staging
-          when: env_type == 'staging'
-          shell: |
-            echo "Deploying to staging environment..."
-            cd /home/ubuntu/agencify-backend && \
-            git fetch && \
-            git checkout {{ branch_name }} && \
-            git pull origin {{ branch_name }} --rebase && \
-            sudo docker compose -f staging-compose.yml up -d
-          register: staging_deploy
-
-        - name: Deploy to preprod
-          when: env_type == 'preprod'
-          shell: |
-            echo "Deploying to preprod environment..."
-            cd /home/ubuntu/agencify-backend && \
-            git fetch && \
-            git checkout {{ branch_name }} && \
-            git pull origin {{ branch_name }} --rebase && \
-            sudo docker compose -f preprod-compose.yml up -d
-          register: preprod_deploy
-
-        - name: Show non-prod deployment status
+        - name: Show deployment errors
           debug:
             msg: |
-              Deployment completed successfully for {{ env_type }} environment:
-              {% if env_type == 'dev' %}
-              {{ dev_deploy.stdout_lines | default([]) }}
-              {% elif env_type == 'staging' %}
-              {{ staging_deploy.stdout_lines | default([]) }}
-              {% elif env_type == 'preprod' %}
-              {{ preprod_deploy.stdout_lines | default([]) }}
-              {% endif %}
-      when: env_type != 'prod'
-
-    - name: Deploy to production
-      block:
-        - name: Deploy using Helm
-          shell: |
-            echo "Deploying to production environment..."
-            docker run --rm \
-              -v {{ remote_workspace }}:/app \
-              -w /app \
-              dtzar/helm-kubectl \
-              helm upgrade --install \
-                --set image.repository='{{ docker_registry }}/{{ app_name }}' \
-                --set image.tag='{{ app_version }}' \
-                --set ingress.domain='{{ k8s_domain }}' \
-                --set ingress.route='{{ k8s_route }}' \
-                {{ app_name }} charts/ -n {{ env_type }}
-          register: prod_deploy
-
-        - name: Show production deployment status
-          debug:
-            msg: |
-              Production deployment completed successfully:
-              {{ prod_deploy.stdout_lines | default([]) }}
-      when: env_type == 'prod'
-
-    - name: Show deployment errors
-      debug:
-        msg: |
-          Deployment failed:
-          {% if env_type == 'dev' %}
-          {{ dev_deploy.stderr_lines | default([]) }}
-          {% elif env_type == 'staging' %}
-          {{ staging_deploy.stderr_lines | default([]) }}
-          {% elif env_type == 'preprod' %}
-          {{ preprod_deploy.stderr_lines | default([]) }}
-          {% else %}
-          {{ prod_deploy.stderr_lines | default([]) }}
-          {% endif %}
-      when: >
-        (env_type == 'dev' and dev_deploy is failed) or
-        (env_type == 'staging' and staging_deploy is failed) or
-        (env_type == 'preprod' and preprod_deploy is failed) or
-        (env_type == 'prod' and prod_deploy is failed)
-      failed_when: true
-
-    - name: Verify deployment
-      block:
-        - name: Check Docker containers
-          shell: docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-          register: container_status
-          when: env_type != 'prod'
-
-        - name: Show container status
-          debug:
-            msg: |
-              Running containers:
-              {{ container_status.stdout_lines | default([]) }}
-          when: env_type != 'prod'
-
-        - name: Check Helm deployment
-          shell: |
-            docker run --rm \
-              -v {{ remote_workspace }}:/app \
-              -w /app \
-              dtzar/helm-kubectl \
-              helm list -n {{ env_type }}
-          register: helm_status
-          when: env_type == 'prod'
-
-        - name: Show Helm status
-          debug:
-            msg: |
-              Helm deployments:
-              {{ helm_status.stdout_lines | default([]) }}
-          when: env_type == 'prod'
+              Deployment Failed:
+              Error: {{ dev_deploy.stderr_lines | default([]) }}
+              Return Code: {{ dev_deploy.rc | default('Unknown') }}
+          when: dev_deploy is failed
+          failed_when: true
