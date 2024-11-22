@@ -155,12 +155,66 @@
       block:
         - name: Deploy to non-prod environment
           when: k8s_env != 'prod'
-          shell: |
-            {% if k8s_env == 'dev' %}
-            ssh ubuntu@10.0.3.74 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ branch_name }} && git pull origin {{ branch_name }} --rebase && sudo docker compose up -d'
-            {% elif k8s_env == 'staging' %}
-            ssh ubuntu@10.0.3.85 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ branch_name }} && git pull origin {{ branch_name }} --rebase && sudo docker compose -f staging-compose.yml up -d'
-            {% endif %}
+          block:
+            - name: Display deployment info
+              debug:
+                msg: |
+                  Starting non-prod deployment:
+                  - Environment: {{ k8s_env }}
+                  - Branch: {{ branch_name }}
+                  - Target server: {% if k8s_env == 'dev' %}10.0.3.74{% else %}10.0.3.85{% endif %}
+
+            - name: Deploy to dev
+              when: k8s_env == 'dev'
+              shell: |
+                echo "Starting dev deployment..."
+                echo "Connecting to dev server..."
+                ssh ubuntu@10.0.3.74 '
+                  echo "Connected to dev server"
+                  echo "Changing directory to agencify-backend..."
+                  cd /home/ubuntu/agencify-backend && \
+                  echo "Fetching latest changes..." && \
+                  git fetch && \
+                  echo "Checking out branch {{ branch_name }}..." && \
+                  git checkout {{ branch_name }} && \
+                  echo "Pulling latest changes..." && \
+                  git pull origin {{ branch_name }} --rebase && \
+                  echo "Starting docker compose..." && \
+                  sudo docker compose up -d
+                  echo "Dev deployment completed"
+                '
+              register: dev_deploy
+              
+            - name: Deploy to staging
+              when: k8s_env == 'staging'
+              shell: |
+                echo "Starting staging deployment..."
+                echo "Connecting to staging server..."
+                ssh ubuntu@10.0.3.85 '
+                  echo "Connected to staging server"
+                  echo "Changing directory to agencify-backend..."
+                  cd /home/ubuntu/agencify-backend && \
+                  echo "Fetching latest changes..." && \
+                  git fetch && \
+                  echo "Checking out branch {{ branch_name }}..." && \
+                  git checkout {{ branch_name }} && \
+                  echo "Pulling latest changes..." && \
+                  git pull origin {{ branch_name }} --rebase && \
+                  echo "Starting docker compose with staging config..." && \
+                  sudo docker compose -f staging-compose.yml up -d
+                  echo "Staging deployment completed"
+                '
+              register: staging_deploy
+
+            - name: Display deployment result
+              debug:
+                msg: |
+                  Deployment Results:
+                  {% if k8s_env == 'dev' %}
+                  Dev deployment output: {{ dev_deploy }}
+                  {% elif k8s_env == 'staging' %}
+                  Staging deployment output: {{ staging_deploy }}
+                  {% endif %}
 
         - name: Deploy to production
           when: k8s_env == 'prod'
