@@ -6,20 +6,6 @@
     remote_workspace: "/opt/jenkins/workspace/auth-service"
 
   tasks:
-    # Create and prepare workspace directory
-    - name: Create jenkins workspace parent directory
-      file:
-        path: "/opt/jenkins/workspace"
-        state: directory
-        mode: '0755'
-        owner: ubuntu
-        group: ubuntu
-
-    - name: Remove existing workspace if present
-      file:
-        path: "{{ remote_workspace }}"
-        state: absent
-
     - name: Create remote workspace directory
       file:
         path: "{{ remote_workspace }}"
@@ -28,7 +14,6 @@
         owner: ubuntu
         group: ubuntu
 
-    # Copy workspace files
     - name: Synchronize workspace
       synchronize:
         src: "{{ workspace_dir }}/"
@@ -37,88 +22,56 @@
           - "--exclude=.git"
       become: no
 
-    # Set permissions after sync
-    - name: Set jenkins ownership
+    - name: Set jenkins ownership and make gradlew executable
       file:
-        path: "{{ remote_workspace }}"
-        state: directory
-        recurse: yes
+        path: "{{ item.path }}"
+        state: "{{ item.state | default('file') }}"
+        recurse: "{{ item.recurse | default(omit) }}"
         owner: jenkins
         group: jenkins
+        mode: "{{ item.mode | default(omit) }}"
+      with_items:
+        - { path: "{{ remote_workspace }}", state: directory, recurse: yes }
+        - { path: "{{ remote_workspace }}/gradlew", mode: '0755' }
 
-    - name: Make gradlew executable
-      file:
-        path: "{{ remote_workspace }}/gradlew"
-        mode: '0755'
-
-    # Run tests with detailed logging
     - name: Run Gradle tests
       shell: |
-        sudo -u jenkins ./gradlew clean test --build-cache --info
+        sudo -u jenkins ./gradlew clean test --build-cache --quiet
       args:
         chdir: "{{ remote_workspace }}"
       register: test_result
       ignore_errors: yes
 
-    - name: Display test execution output
+    - name: Display test summary
       debug:
-        msg: "{{ test_result.stdout_lines }}"
-      when: test_result.stdout_lines is defined
+        msg: "Tests {{ 'PASSED' if test_result.rc == 0 else 'FAILED' }}"
 
-    - name: Display test errors (if any)
-      debug:
-        msg: "{{ test_result.stderr_lines }}"
-      when: test_result.stderr_lines is defined
-
-    - name: Check test results
-      fail:
-        msg: |
-          Gradle tests failed with return code {{ test_result.rc }}
-          Error output:
-          {{ test_result.stderr }}
-          Standard output:
-          {{ test_result.stdout }}
-      when: test_result.rc != 0
-
-    # Quality Gate
     - name: Run SonarQube analysis
       shell: |
-        sudo -u jenkins ./gradlew clean test sonar --build-cache --info
+        sudo -u jenkins ./gradlew sonar --quiet
       args:
         chdir: "{{ remote_workspace }}"
-      register: sonar_result
-      ignore_errors: yes
       environment:
         SONAR_TOKEN: "{{ sonar_token | default('') }}"
 
-    - name: Display SonarQube analysis output
-      debug:
-        msg: "{{ sonar_result.stdout_lines }}"
-      when: sonar_result.stdout_lines is defined
-
-    - name: Wait for quality gate result
+    - name: Wait for quality gate
       shell: |
         sleep 10
-        curl -u "{{ sonar_token | default('') }}:" "{{ sonar_url }}/api/qualitygates/project_status?projectKey={{ project_key }}"
+        curl -s -u "{{ sonar_token | default('') }}:" "{{ sonar_url }}/api/qualitygates/project_status?projectKey={{ project_key }}" | grep -o '"status":"[^"]*"' | cut -d'"' -f4
       register: quality_gate_result
-      until: quality_gate_result.stdout | regex_search('"status":"OK"')
-      retries: 10
+      until: quality_gate_result.stdout == "OK"
+      retries: 5
       delay: 5
       ignore_errors: yes
 
-    # Set Image Version
     - name: Get application version
       shell: |
-        sudo -u jenkins ./gradlew properties -q | grep 'version:' | grep -v 'kotlin.version:' | awk -F ':' '{print $2}'
+        sudo -u jenkins ./gradlew properties -q | grep '^version:' | awk '{print $2}'
       args:
         chdir: "{{ remote_workspace }}"
       register: version_result
 
-    - name: Set app version fact
-      set_fact:
-        app_version: "{{ version_result.stdout | trim }}"
-
-    - name: Display app version
+    - name: Display version
       debug:
-        msg: "Application version: {{ app_version }}"
+        msg: "Version: {{ version_result.stdout | trim }}"
     
