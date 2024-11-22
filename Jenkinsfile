@@ -13,8 +13,7 @@ pipeline {
         stage("Build and Test") {
             steps {
                 script {
-                    def branchName = sh(script: 'git rev-parse --abbrev-ref HEAD || git branch --show-current || basename $(git rev-parse --symbolic-full-name HEAD)', returnStdout: true).trim()
-                    branchName = branchName.replaceAll('remotes/origin/', '')
+                    def branchName = 'dev'
                     echo "Building for branch: ${branchName}"
                     
                     withCredentials([usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')]) {
