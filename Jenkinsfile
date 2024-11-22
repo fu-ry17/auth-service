@@ -51,7 +51,8 @@ pipeline {
                     echo "Deploying to environment: ${envType} using branch: ${branchName}"
                     
                     withCredentials([
-                        usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')
+                        usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS'),
+                        sshUserPrivateKey(credentialsId: 'ubuntu-dev', keyFileVariable: 'SSH_KEY_FILE')
                     ]) {
                         def dockerUser = sh(script: "echo $DOCKER_CREDS | cut -d':' -f1", returnStdout: true).trim()
                         def dockerPass = sh(script: "echo $DOCKER_CREDS | cut -d':' -f2", returnStdout: true).trim()
@@ -71,7 +72,7 @@ pipeline {
                                      -e 'k8s_domain=${setK8Domain()}'
                                      -e 'k8s_route=${setK8Route()}'
                                      -e 'docker_registry=${env.DOCKER_REGISTRY}'
-                                     -e 'ssh_key=${SSH_KEY}'"""
+                                     -e 'ssh_key_file=${SSH_KEY_FILE}'"""
                         )
                     }
                 }
