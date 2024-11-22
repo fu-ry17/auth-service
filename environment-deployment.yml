@@ -11,6 +11,7 @@
     k8s_domain: "{{ k8s_domain | default('janzi.agencify.insure') }}"
     k8s_route: "{{ k8s_route | default('/api') }}"
     docker_registry: "{{ docker_registry }}"
+    ssh_key: "{{ ssh_key }}"
 
   tasks:
     - name: Print deployment info
@@ -29,7 +30,7 @@
           when: env_type == 'dev'
           shell: |
             echo "Deploying to dev environment..."
-            ssh -o StrictHostKeyChecking=no yewa@10.0.3.74 "
+            ssh -i {{ ssh_key }} -o StrictHostKeyChecking=no ubuntu@10.0.3.74 "
               cd /home/ubuntu/agencify-backend && \
               git fetch && \
               git checkout {{ branch_name }} && \
@@ -42,7 +43,7 @@
           when: env_type == 'staging'
           shell: |
             echo "Deploying to staging environment..."
-            ssh -o StrictHostKeyChecking=no ubuntu@10.0.3.85 "
+            ssh -i {{ ssh_key }} -o StrictHostKeyChecking=no ubuntu@10.0.3.85 "
               cd /home/ubuntu/agencify-backend && \
               git fetch && \
               git checkout {{ branch_name }} && \

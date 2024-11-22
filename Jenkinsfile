@@ -8,6 +8,7 @@ pipeline {
         PROJECT_KEY = 'agencify-auth'
         DOCKER_REGISTRY = '10.0.3.224:8003'
         HELM_REPO = 'http://10.0.3.224:8002/repository/agencify-helm-repo/'
+        SSH_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKk3ZpAx/6kxaKvPlqby5XSzWWl8ljlHPcFN7gr+PrRQ brian.yewa@agencify.insure'
     }
     
     stages {
@@ -49,7 +50,10 @@ pipeline {
                     def branchName = env.BRANCH_NAME ?: 'develop'
                     echo "Deploying to environment: ${envType} using branch: ${branchName}"
                     
-                    withCredentials([usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')]) {
+                    withCredentials([
+                        usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS'),
+                        sshUserPrivateKey(credentialsId: 'dev-ssh-key', keyFileVariable: 'SSH_KEY')
+                    ]) {
                         def dockerUser = sh(script: "echo $DOCKER_CREDS | cut -d':' -f1", returnStdout: true).trim()
                         def dockerPass = sh(script: "echo $DOCKER_CREDS | cut -d':' -f2", returnStdout: true).trim()
                         
@@ -67,7 +71,8 @@ pipeline {
                                      -e 'k8s_api=${setK8Api()}'
                                      -e 'k8s_domain=${setK8Domain()}'
                                      -e 'k8s_route=${setK8Route()}'
-                                     -e 'docker_registry=${env.DOCKER_REGISTRY}'"""
+                                     -e 'docker_registry=${env.DOCKER_REGISTRY}'
+                                     -e 'ssh_key=${SSH_KEY}'"""
                         )
                     }
                 }
