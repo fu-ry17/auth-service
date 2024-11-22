@@ -104,9 +104,21 @@
 
     - name: Login to Docker registry
       shell: |
-        echo {{ docker_creds }} | docker login {{ docker_registry }} --username {{ docker_creds.split(':')[0] }} --password-stdin
+        docker login {{ docker_registry }} -u {{ docker_user }} -p {{ docker_pass }}
+      register: docker_login
       become: yes
       no_log: true
+      ignore_errors: yes
+
+    - name: Show Docker login status
+      debug:
+        msg: "Docker login {{ 'succeeded' if docker_login.rc == 0 else 'failed' }}"
+      when: docker_login is defined
+
+    - name: Fail if Docker login failed
+      fail:
+        msg: "Failed to login to Docker registry"
+      when: docker_login.rc != 0
 
     - name: Build Docker image
       shell: |

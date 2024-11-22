@@ -14,20 +14,26 @@ pipeline {
             steps {
                 checkout scm
                 withCredentials([usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')]) {
-                    ansiblePlaybook(
-                        credentialsId: 'dev-server',
-                        disableHostKeyChecking: true,
-                        installation: 'ansible',
-                        inventory: 'dev.inv',
-                        playbook: 'deploy-playbook.yml',
-                        extras: """-e 'workspace_dir=${env.WORKSPACE_DIR}' 
-                                 -e 'sonar_token=${env.SONAR_TOKEN}' 
-                                 -e 'sonar_url=${env.SONAR_URL}' 
-                                 -e 'project_key=${env.PROJECT_KEY}'
-                                 -e 'docker_registry=${env.DOCKER_REGISTRY}'
-                                 -e 'docker_creds=${DOCKER_CREDS}'
-                                 -e 'env_type=${env.BRANCH_NAME}'"""
-                    )
+                    script {
+                        def dockerUser = sh(script: "echo $DOCKER_CREDS | cut -d':' -f1", returnStdout: true).trim()
+                        def dockerPass = sh(script: "echo $DOCKER_CREDS | cut -d':' -f2", returnStdout: true).trim()
+                        
+                        ansiblePlaybook(
+                            credentialsId: 'dev-server',
+                            disableHostKeyChecking: true,
+                            installation: 'ansible',
+                            inventory: 'dev.inv',
+                            playbook: 'deploy-playbook.yml',
+                            extras: """-e 'workspace_dir=${env.WORKSPACE_DIR}' 
+                                     -e 'sonar_token=${env.SONAR_TOKEN}' 
+                                     -e 'sonar_url=${env.SONAR_URL}' 
+                                     -e 'project_key=${env.PROJECT_KEY}'
+                                     -e 'docker_registry=${env.DOCKER_REGISTRY}'
+                                     -e 'docker_user=${dockerUser}'
+                                     -e 'docker_pass=${dockerPass}'
+                                     -e 'env_type=${env.BRANCH_NAME}'"""
+                        )
+                    }
                 }
             }
         }
