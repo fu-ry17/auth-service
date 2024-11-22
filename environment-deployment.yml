@@ -73,7 +73,7 @@
         #       ==========================================
 
         - name: Start new containers
-          shell: docker compose up -d
+          shell: sudo docker compose up -d
           args:
             chdir: /home/ubuntu/agencify-backend
           register: docker_start
