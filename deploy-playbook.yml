@@ -91,7 +91,7 @@
       block:
         - name: Execute dev deployment
           shell: |
-            ssh ubuntu@10.0.3.74 "
+            ssh yewa@10.0.3.74 "
               cd /home/ubuntu/agencify-backend && \
               git fetch && \
               git checkout {{ branch_name | default('develop') }} && \
@@ -99,7 +99,7 @@
               sudo docker compose up -d
             "
           register: deploy_result
-          ignore_errors: yes
+          ignore_errors: no
 
         - name: Show deployment error
           when: deploy_result.rc != 0
