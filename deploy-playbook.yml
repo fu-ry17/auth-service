@@ -161,30 +161,39 @@
                 msg: |
                   Starting non-prod deployment:
                   - Environment: {{ k8s_env }}
-                  - Branch: {{ branch_name }}
+                  - Branch: {{ branch_name | default('develop') }}
                   - Target server: {% if k8s_env == 'dev' %}10.0.3.74{% else %}10.0.3.85{% endif %}
 
             - name: Deploy to dev
               when: k8s_env == 'dev'
               shell: |
-                echo "Starting dev deployment..."
-                echo "Connecting to dev server..."
-                ssh ubuntu@10.0.3.74 '
-                  echo "Connected to dev server"
-                  echo "Changing directory to agencify-backend..."
-                  cd /home/ubuntu/agencify-backend && \
-                  echo "Fetching latest changes..." && \
-                  git fetch && \
-                  echo "Checking out branch {{ branch_name }}..." && \
-                  git checkout {{ branch_name }} && \
-                  echo "Pulling latest changes..." && \
-                  git pull origin {{ branch_name }} --rebase && \
-                  echo "Starting docker compose..." && \
+                set -x  # Enable debug mode
+                echo "Starting dev deployment to 10.0.3.74..."
+                ssh -v ubuntu@10.0.3.74 "
+                  set -x
+                  echo 'Connected to dev server'
+                  cd /home/ubuntu/agencify-backend || exit 1
+                  echo 'Current directory: $(pwd)'
+                  git fetch
+                  echo 'Checking out branch {{ branch_name | default('develop') }}'
+                  git checkout {{ branch_name | default('develop') }}
+                  git pull origin {{ branch_name | default('develop') }} --rebase
+                  echo 'Starting docker compose...'
                   sudo docker compose up -d
-                  echo "Dev deployment completed"
-                '
+                  echo 'Dev deployment completed'
+                "
               register: dev_deploy
-              
+              ignore_errors: yes  # Continue execution but register any errors
+            
+            - name: Debug dev deployment
+              when: k8s_env == 'dev'
+              debug:
+                msg: |
+                  Dev Deployment Details:
+                  - Return Code: {{ dev_deploy.rc | default('N/A') }}
+                  - Stdout: {{ dev_deploy.stdout_lines | default([]) }}
+                  - Stderr: {{ dev_deploy.stderr_lines | default([]) }}
+
             - name: Deploy to staging
               when: k8s_env == 'staging'
               shell: |

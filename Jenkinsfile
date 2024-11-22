@@ -7,6 +7,7 @@ pipeline {
         SONAR_TOKEN = 'sqp_0328fe551ffc7bcbb25740fffe0cf3d254b478b7'
         SONAR_URL = 'https://obokano.agencify.insure/'
         PROJECT_KEY = 'agencify-auth'
+        BRANCH_NAME = "${env.BRANCH_NAME ?: 'develop'}"
     }
 
     stages {
@@ -23,7 +24,7 @@ pipeline {
                 script {
                     echo "Starting Ansible pipeline execution..."
                     def workspaceDir = sh(script: 'pwd', returnStdout: true).trim()
-                    echo "Current branch: ${env.BRANCH_NAME}"
+                    echo "Current branch: ${BRANCH_NAME}"
                     
                     echo "Determining environment configuration..."
                     def K8_ENV = setEnv()
@@ -34,6 +35,7 @@ pipeline {
 
                     echo """
                     Environment Configuration:
+                    - Branch Name: ${BRANCH_NAME}
                     - Environment: ${K8_ENV}
                     - Secret: ${K8_ENV_SECRET}
                     - API: ${K8_API}
@@ -66,7 +68,7 @@ pipeline {
                                      -e 'k8s_api=${K8_API}'
                                      -e 'k8s_domain=${K8_DOMAIN}'
                                      -e 'k8s_route=${K8_ROUTE}'
-                                     -e 'branch_name=${env.BRANCH_NAME}'
+                                     -e 'branch_name=${BRANCH_NAME}'
                                      -e 'sonar_token=${SONAR_TOKEN}'
                                      -e 'sonar_url=${SONAR_URL}'
                                      -e 'project_key=${PROJECT_KEY}'"""
