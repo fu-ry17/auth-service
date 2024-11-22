@@ -91,29 +91,38 @@
       block:
         - name: Execute dev deployment
           shell: |
-            ssh yewa@10.0.3.74 "
-              cd /home/ubuntu/agencify-backend && \
-              git fetch && \
-              git checkout {{ branch_name | default('develop') }} && \
-              git pull origin {{ branch_name | default('develop') }} --rebase && \
+            timeout 300 ssh -o ConnectTimeout=10 -o BatchMode=yes ubuntu@10.0.3.252 "
+              set -e
+              echo 'Starting deployment...'
+              cd /home/ubuntu/agencify-backend || exit 1
+              echo 'Fetching latest changes...'
+              git fetch
+              echo 'Checking out branch {{ branch_name | default('develop') }}...'
+              git checkout {{ branch_name | default('develop') }}
+              echo 'Pulling latest changes...'
+              git pull origin {{ branch_name | default('develop') }} --rebase
+              echo 'Starting docker compose...'
               sudo docker compose up -d
+              echo 'Deployment completed'
             "
           register: deploy_result
-          ignore_errors: no
+          ignore_errors: yes
+          async: 300  # 5 minutes timeout
+          poll: 10    # Check every 10 seconds
 
         - name: Show deployment error
-          when: deploy_result.rc != 0
+          when: deploy_result.rc != 0 or deploy_result.failed is defined
           debug:
             msg: |
               Deployment failed with error:
-              Return code: {{ deploy_result.rc }}
-              Error message: {{ deploy_result.stderr }}
-              Output: {{ deploy_result.stdout }}
+              Return code: {{ deploy_result.rc | default('N/A') }}
+              Error message: {{ deploy_result.stderr | default('No error message') }}
+              Output: {{ deploy_result.stdout | default('No output') }}
           failed_when: true
 
         - name: Show deployment success
-          when: deploy_result.rc == 0
+          when: deploy_result.rc == 0 and deploy_result.failed is not defined
           debug:
-            msg: "Deployment completed successfully"
+            msg: "Deployment completed successfully: {{ deploy_result.stdout }}"
 
           
