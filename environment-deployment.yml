@@ -49,28 +49,28 @@
               {{ git_checkout.stdout_lines | default([]) }}
               ==========================================
 
-        - name: Pull latest changes
-          shell: git pull
-          args:
-            chdir: /home/ubuntu/agencify-backend
-          register: git_pull
-          when: env_type == 'dev'
+        # - name: Pull latest changes
+        #   shell: git pull
+        #   args:
+        #     chdir: /home/ubuntu/agencify-backend
+        #   register: git_pull
+        #   when: env_type == 'dev'
 
-        - name: Show pull results
-          debug:
-            msg: |
-              ==========================================
-              Git Pull Results:
-              {{ git_pull.stdout_lines | default([]) }}
-              ==========================================
+        # - name: Show pull results
+        #   debug:
+        #     msg: |
+        #       ==========================================
+        #       Git Pull Results:
+        #       {{ git_pull.stdout_lines | default([]) }}
+        #       ==========================================
 
-        - name: Show container stop results
-          debug:
-            msg: |
-              ==========================================
-              Stopping Containers:
-              {{ docker_stop.stdout_lines | default([]) }}
-              ==========================================
+        # - name: Show container stop results
+        #   debug:
+        #     msg: |
+        #       ==========================================
+        #       Stopping Containers:
+        #       {{ docker_stop.stdout_lines | default([]) }}
+        #       ==========================================
 
         - name: Start new containers
           shell: docker compose up -d
