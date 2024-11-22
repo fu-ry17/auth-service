@@ -34,6 +34,7 @@ pipeline {
                                      -e 'docker_registry=${env.DOCKER_REGISTRY}'
                                      -e 'docker_user=${dockerUser}'
                                      -e 'docker_pass=${dockerPass}'
+                                     -e 'helm_repo=${env.HELM_REPO}'
                                      -e 'env_type=${branchName}'"""
                         )
                     }
@@ -42,7 +43,6 @@ pipeline {
         }
     }
 }
-
 
 
 
