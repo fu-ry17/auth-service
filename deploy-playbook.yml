@@ -24,6 +24,12 @@
           loop:
             - "gradle:8.2.1-jdk17-alpine"
             - "dtzar/helm-kubectl"
+          register: docker_pull
+        
+        - name: Show Docker pull status
+          debug:
+            msg: "Successfully pulled Docker images"
+          when: docker_pull is succeeded
 
     - name: Create and sync workspace
       block:
@@ -34,6 +40,11 @@
             mode: '0755'
             owner: ubuntu
             group: ubuntu
+          register: workspace_create
+
+        - name: Show workspace creation status
+          debug:
+            msg: "Workspace directory {{ 'created' if workspace_create.changed else 'already exists' }}"
 
         - name: Synchronize workspace
           synchronize:
@@ -42,6 +53,12 @@
             rsync_opts:
               - "--exclude=.git"
           become: no
+          register: sync_result
+
+        - name: Show sync status
+          debug:
+            msg: "Workspace synchronized successfully"
+          when: sync_result is succeeded
 
         - name: Set jenkins ownership
           file:
@@ -58,12 +75,21 @@
             path: "{{ remote_workspace }}/gradlew"
             mode: '0755'
 
+        - name: Running Gradle tests
+          debug:
+            msg: "Starting Gradle tests..."
+
         - name: Run Gradle tests
           shell: |
             sudo -u jenkins ./gradlew clean test --build-cache
           args:
             chdir: "{{ remote_workspace }}"
           register: test_result
+
+        - name: Show test results
+          debug:
+            msg: "Gradle tests completed successfully"
+          when: test_result.rc == 0
 
         - name: Check test results
           fail:
@@ -72,6 +98,10 @@
 
     - name: Set Image Info
       block:
+        - name: Getting application version
+          debug:
+            msg: "Extracting application version..."
+
         - name: Get application version
           shell: |
             sudo -u jenkins ./gradlew properties -q | grep 'version:' | grep -v 'kotlin.version:' | awk -F ':' '{print $2}'
@@ -79,14 +109,20 @@
             chdir: "{{ remote_workspace }}"
           register: version_result
 
-        - name: Set version fact
-          set_fact:
-            app_version: "{{ version_result.stdout | trim }}"
+        - name: Show version
+          debug:
+            msg: "Application version: {{ version_result.stdout | trim }}"
 
         - name: Get chart name
           shell: |
             docker run -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm show chart ./charts | grep name | cut -d: -f 2 | tr -d ' '
           register: chart_name_result
+
+        - name: Show chart info
+          debug:
+            msg: 
+              - "Chart name: {{ chart_name_result.stdout | trim }}"
+              - "Environment: {{ env_type }}"
 
         - name: Set chart facts
           set_fact:
@@ -95,49 +131,103 @@
 
     - name: Build and Push Docker Image
       block:
+        - name: Building Docker image
+          debug:
+            msg: "Starting Docker build for {{ docker_registry }}/{{ app_name }}:{{ app_version }}"
+
         - name: Build Docker image
           shell: |
             docker build -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} {{ remote_workspace }}
           register: docker_build
+
+        - name: Show build completion
+          debug:
+            msg: "Docker build completed successfully"
+          when: docker_build.rc == 0
 
         - name: Login to Docker registry
           shell: |
             docker login {{ docker_registry }} -u {{ docker_user }} -p {{ docker_pass }}
           no_log: true
           when: docker_build.rc == 0
+          register: docker_login
+
+        - name: Show login status
+          debug:
+            msg: "Docker login {{ 'successful' if docker_login.rc == 0 else 'failed' }}"
+          when: docker_login is defined
 
         - name: Push Docker images
           shell: |
             docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }} && \
             docker tag {{ docker_registry }}/{{ app_name }}:{{ app_version }} {{ docker_registry }}/{{ app_name }}:latest && \
             docker push {{ docker_registry }}/{{ app_name }}:latest
+          register: docker_push
           when: docker_build.rc == 0
+
+        - name: Show push status
+          debug:
+            msg: "Successfully pushed all Docker images"
+          when: docker_push.rc == 0
 
     - name: Package and Push Helm Chart
       block:
+        - name: Packaging Helm chart
+          debug:
+            msg: "Starting Helm chart packaging..."
+
         - name: Package Helm chart
           shell: |
             docker run --rm -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm package charts/ --app-version {{ app_version }} --version {{ app_version }}
           args:
             chdir: "{{ remote_workspace }}"
+          register: helm_package
+
+        - name: Show package status
+          debug:
+            msg: "Helm chart packaged successfully"
+          when: helm_package.rc == 0
 
         - name: Push Helm chart
           shell: |
             curl -u {{ docker_user }}:{{ docker_pass }} {{ helm_repo }} --upload-file {{ chart_name }}-{{ app_version }}.tgz -v
           args:
             chdir: "{{ remote_workspace }}"
+          register: helm_push
+          no_log: true
+
+        - name: Show push status
+          debug:
+            msg: "Helm chart pushed successfully"
+          when: helm_push.rc == 0
 
     - name: Deploy Application
       block:
+        - name: Starting deployment
+          debug:
+            msg: "Deploying to {{ env_type }} environment"
+
         - name: Deploy to Development
           shell: |
-            ssh ubuntu@10.0.3.74 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ env_type }} && git pull origin {{ env_type }} --rebase && sudo docker compose up -d'
+            ssh yewa@10.0.3.74 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ env_type }} && git pull origin {{ env_type }} --rebase && sudo docker compose up -d'
+          register: dev_deploy
           when: env_type == 'dev'
+
+        - name: Show dev deployment status
+          debug:
+            msg: "Development deployment completed successfully"
+          when: dev_deploy is succeeded and env_type == 'dev'
 
         - name: Deploy to Staging
           shell: |
             ssh ubuntu@10.0.3.85 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ env_type }} && git pull origin {{ env_type }} --rebase && sudo docker compose -f staging-compose.yml up -d'
+          register: staging_deploy
           when: env_type == 'staging'
+
+        - name: Show staging deployment status
+          debug:
+            msg: "Staging deployment completed successfully"
+          when: staging_deploy is succeeded and env_type == 'staging'
 
         - name: Deploy to Production
           shell: |
@@ -151,5 +241,11 @@
               --set ingress.domain='{{ k8s_domain }}' \
               --set ingress.route='{{ k8s_route }}' \
               {{ app_name }} charts/ -n {{ env_type }}
+          register: prod_deploy
           when: env_type == 'prod'
+
+        - name: Show production deployment status
+          debug:
+            msg: "Production deployment completed successfully"
+          when: prod_deploy is succeeded and env_type == 'prod'
     
