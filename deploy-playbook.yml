@@ -5,7 +5,7 @@
     workspace_dir: "{{ workspace_dir | default(ansible_env.WORKSPACE) }}"
     remote_workspace: "/opt/jenkins/workspace/auth-service"
     docker_registry: "{{ docker_registry }}"
-    helm_repo: "http://10.0.3.224:8002/repository/agencify-helm-repo/"
+    helm_repo: "{{ helm_repo }}"
 
   tasks:
     - name: Create and sync workspace
