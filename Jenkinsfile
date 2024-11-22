@@ -54,8 +54,6 @@ pipeline {
                         } catch (Exception e) {
                             currentBuild.result = 'FAILURE'
                             error "Pipeline failed: ${e.message}"
-                        } finally {
-                            jiraSendBuildInfo()
                         }
                     }
                 }
