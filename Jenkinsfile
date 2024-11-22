@@ -8,10 +8,16 @@ pipeline {
         PROJECT_KEY = 'agencify-auth'
         DOCKER_REGISTRY = '10.0.3.224:8003'
         HELM_REPO = 'http://10.0.3.224:8002/repository/agencify-helm-repo/'
-        // Remove the public key and use private key from Jenkins credentials
+        JAVA_HOME = tool name: 'jdk-17', type: 'jdk'
     }
     
     stages {
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
         stage("Test, Build and Package") {
             steps {
                 script {
@@ -32,7 +38,7 @@ pipeline {
                                      -e 'sonar_token=${env.SONAR_TOKEN}' 
                                      -e 'sonar_url=${env.SONAR_URL}' 
                                      -e 'project_key=${env.PROJECT_KEY}'
-                                     -e 'docker_registry=${env.DOCKER_REGISTRY}'
+                                     -e 'docker_registry=${Constants.DOCKER_REGISTRY}'
                                      -e 'docker_user=${dockerUser}'
                                      -e 'docker_pass=${dockerPass}'
                                      -e 'helm_repo=${env.HELM_REPO}'
@@ -47,11 +53,11 @@ pipeline {
             steps {
                 script {
                     def envType = setEnv()
-                    def branchName = env.BRANCH_NAME ?: 'develop'
+                    def branchName = env.BRANCH_NAME ?: Constants.DEVELOP_BRANCH
                     echo "Deploying to environment: ${envType} using branch: ${branchName}"
                     
                     withCredentials([
-                        usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS'),
+                        usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')
                     ]) {
                         def dockerUser = sh(script: "echo $DOCKER_CREDS | cut -d':' -f1", returnStdout: true).trim()
                         def dockerPass = sh(script: "echo $DOCKER_CREDS | cut -d':' -f2", returnStdout: true).trim()
@@ -70,7 +76,7 @@ pipeline {
                                      -e 'k8s_api=${setK8Api()}'
                                      -e 'k8s_domain=${setK8Domain()}'
                                      -e 'k8s_route=${setK8Route()}'
-                                     -e 'docker_registry=${env.DOCKER_REGISTRY}'"""
+                                     -e 'docker_registry=${Constants.DOCKER_REGISTRY}'"""
                         )
                     }
                 }
@@ -81,17 +87,17 @@ pipeline {
 
 def setEnv() {
     def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
-    if (ENV_TAG.contains('-rc')) {
+    if (ENV_TAG.contains(Constants.PRODUCTION_TAG)) {
         return 'prod'
     } else {
         switch (env.BRANCH_NAME) {
-            case 'production':
+            case Constants.PRODUCTION_BRANCH:
                 return 'prod'
-            case 'preprod':
+            case Constants.PREPROD_BRANCH:
                 return 'preprod'
-            case 'master':
+            case Constants.MASTER_BRANCH:
                 return 'staging'
-            case 'develop':
+            case Constants.DEVELOP_BRANCH:
                 return 'dev'
             default:
                 return 'dev'
@@ -101,17 +107,17 @@ def setEnv() {
 
 def getK8Secret() {
     def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
-    if (ENV_TAG.contains('-rc')) {
+    if (ENV_TAG.contains(Constants.PRODUCTION_TAG)) {
         return 'k8sonprodNS-prod'
     } else {
         switch (env.BRANCH_NAME) {
-            case 'production':
+            case Constants.PRODUCTION_BRANCH:
                 return 'k8sonprodNS-prod'
-            case 'preprod':
+            case Constants.PREPROD_BRANCH:
                 return 'k8sonPreprodNS-Preprod'
-            case 'master':
+            case Constants.MASTER_BRANCH:
                 return 'k8sonNewDevNS-Staging'
-            case 'develop':
+            case Constants.DEVELOP_BRANCH:
                 return 'k8sonNewDevNS-Dev'
             default:
                 return 'k8sonNewDevNS-Dev'
@@ -121,12 +127,12 @@ def getK8Secret() {
 
 def setK8Api() {
     def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
-    if (ENV_TAG.contains('-rc')) {
-        return 'https://10.0.4.212:6443'
+    if (ENV_TAG.contains(Constants.PRODUCTION_TAG)) {
+        return Constants.K8_API ?: 'https://10.0.4.212:6443'
     } else {
         switch (env.BRANCH_NAME) {
-            case 'production':
-            case 'preprod':
+            case Constants.PRODUCTION_BRANCH:
+            case Constants.PREPROD_BRANCH:
                 return 'https://10.0.4.212:6443'
             default:
                 return 'https://10.0.3.149:6443'
@@ -136,35 +142,42 @@ def setK8Api() {
 
 def setK8Domain() {
     def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
-    if (ENV_TAG.contains('-rc')) {
+    if (ENV_TAG.contains(Constants.PRODUCTION_TAG) || env.BRANCH_NAME in [Constants.PRODUCTION_BRANCH, Constants.PREPROD_BRANCH]) {
         return 'bozomu.agencify.insure'
-    } else {
-        switch (env.BRANCH_NAME) {
-            case 'production':
-            case 'preprod':
-                return 'bozomu.agencify.insure'
-            default:
-                return 'janzi.agencify.insure'
-        }
     }
+    return 'janzi.agencify.insure'
 }
 
 def setK8Route() {
     def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
-    if (ENV_TAG.contains('-rc')) {
+    if (ENV_TAG.contains(Constants.PRODUCTION_TAG)) {
         return '/prod'
     } else {
         switch (env.BRANCH_NAME) {
-            case 'production':
+            case Constants.PRODUCTION_BRANCH:
                 return '/prod'
-            case 'preprod':
+            case Constants.PREPROD_BRANCH:
                 return '/preprod'
-            case 'master':
+            case Constants.MASTER_BRANCH:
                 return '/staging/v1'
             default:
                 return '/api'
         }
     }
+}
+
+class Constants {
+    String ENV_TAG = ''
+    static final String MASTER_BRANCH = 'master'
+    static final String DEVELOP_BRANCH = 'develop'
+    static final String PREPROD_BRANCH = 'preprod'
+    static final String PRODUCTION_BRANCH = 'production'
+    static final String PRODUCTION_TAG = '-rc'
+
+    static final String DOCKER_REGISTRY = '10.0.3.224:8003'
+    static final String K8_ENV = ''
+    static final String K8_ENV_SECRET = ''
+    static final String K8_API = ''
 }
 
 

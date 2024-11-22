@@ -1,7 +1,6 @@
 ---
 - hosts: dev
   become: true
-  become_user: ubuntu
   vars:
     env_type: "{{ env_type }}"
     branch_name: "{{ branch_name | default('develop') }}"
@@ -24,94 +23,125 @@
           - Domain: {{ k8s_domain }}
           - Route: {{ k8s_route }}
 
-    - name: Verify current user
-      shell: whoami
-      register: current_user
+    - name: Deploy to non-prod environment
+      block:
+        - name: Deploy to dev
+          when: env_type == 'dev'
+          shell: |
+            echo "Deploying to dev environment..."
+            cd /home/ubuntu/agencify-backend && \
+            git fetch && \
+            git checkout {{ branch_name }} && \
+            git pull origin {{ branch_name }} --rebase && \
+            sudo docker compose up -d
+          register: dev_deploy
 
-    - name: Show current user
+        - name: Deploy to staging
+          when: env_type == 'staging'
+          shell: |
+            echo "Deploying to staging environment..."
+            cd /home/ubuntu/agencify-backend && \
+            git fetch && \
+            git checkout {{ branch_name }} && \
+            git pull origin {{ branch_name }} --rebase && \
+            sudo docker compose -f staging-compose.yml up -d
+          register: staging_deploy
+
+        - name: Deploy to preprod
+          when: env_type == 'preprod'
+          shell: |
+            echo "Deploying to preprod environment..."
+            cd /home/ubuntu/agencify-backend && \
+            git fetch && \
+            git checkout {{ branch_name }} && \
+            git pull origin {{ branch_name }} --rebase && \
+            sudo docker compose -f preprod-compose.yml up -d
+          register: preprod_deploy
+
+        - name: Show non-prod deployment status
+          debug:
+            msg: |
+              Deployment completed successfully for {{ env_type }} environment:
+              {% if env_type == 'dev' %}
+              {{ dev_deploy.stdout_lines | default([]) }}
+              {% elif env_type == 'staging' %}
+              {{ staging_deploy.stdout_lines | default([]) }}
+              {% elif env_type == 'preprod' %}
+              {{ preprod_deploy.stdout_lines | default([]) }}
+              {% endif %}
+      when: env_type != 'prod'
+
+    - name: Deploy to production
+      block:
+        - name: Deploy using Helm
+          shell: |
+            echo "Deploying to production environment..."
+            docker run --rm \
+              -v {{ remote_workspace }}:/app \
+              -w /app \
+              dtzar/helm-kubectl \
+              helm upgrade --install \
+                --set image.repository='{{ docker_registry }}/{{ app_name }}' \
+                --set image.tag='{{ app_version }}' \
+                --set ingress.domain='{{ k8s_domain }}' \
+                --set ingress.route='{{ k8s_route }}' \
+                {{ app_name }} charts/ -n {{ env_type }}
+          register: prod_deploy
+
+        - name: Show production deployment status
+          debug:
+            msg: |
+              Production deployment completed successfully:
+              {{ prod_deploy.stdout_lines | default([]) }}
+      when: env_type == 'prod'
+
+    - name: Show deployment errors
       debug:
-        msg: "Current user is: {{ current_user.stdout }}"
+        msg: |
+          Deployment failed:
+          {% if env_type == 'dev' %}
+          {{ dev_deploy.stderr_lines | default([]) }}
+          {% elif env_type == 'staging' %}
+          {{ staging_deploy.stderr_lines | default([]) }}
+          {% elif env_type == 'preprod' %}
+          {{ preprod_deploy.stderr_lines | default([]) }}
+          {% else %}
+          {{ prod_deploy.stderr_lines | default([]) }}
+          {% endif %}
+      when: >
+        (env_type == 'dev' and dev_deploy is failed) or
+        (env_type == 'staging' and staging_deploy is failed) or
+        (env_type == 'preprod' and preprod_deploy is failed) or
+        (env_type == 'prod' and prod_deploy is failed)
+      failed_when: true
 
-    - name: Check if directory exists
-      stat:
-        path: /home/ubuntu/agencify-backend
-      register: backend_dir
+    - name: Verify deployment
+      block:
+        - name: Check Docker containers
+          shell: docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          register: container_status
+          when: env_type != 'prod'
 
-    - name: Show directory status
-      debug:
-        msg: "Backend directory {{ 'exists' if backend_dir.stat.exists else 'does not exist' }}"
+        - name: Show container status
+          debug:
+            msg: |
+              Running containers:
+              {{ container_status.stdout_lines | default([]) }}
+          when: env_type != 'prod'
 
-    # - name: Deploy to dev environment
-    #   when: env_type == 'dev'
-    #   block:
-    #     - name: Clone or update repository
-    #       git:
-    #         repo: https://github.com/fu-ry17/auth-service.git
-    #         dest: /home/ubuntu/agencify-backend
-    #         version: "{{ branch_name }}"
-    #         force: yes
-    #       register: git_result
+        - name: Check Helm deployment
+          shell: |
+            docker run --rm \
+              -v {{ remote_workspace }}:/app \
+              -w /app \
+              dtzar/helm-kubectl \
+              helm list -n {{ env_type }}
+          register: helm_status
+          when: env_type == 'prod'
 
-    #     - name: Show git operation result
-    #       debug:
-    #         msg: |
-    #           Git operation completed:
-    #           Changed: {{ git_result.changed }}
-    #           Before: {{ git_result.before }}
-    #           After: {{ git_result.after }}
-
-    #     - name: Check Docker status
-    #       shell: docker ps
-    #       register: docker_status
-    #       ignore_errors: yes
-
-    #     - name: Show Docker status
-    #       debug:
-    #         msg: |
-    #           Docker containers:
-    #           {{ docker_status.stdout_lines | default([]) }}
-
-    #     - name: Start docker compose
-    #       shell: |
-    #         cd /home/ubuntu/agencify-backend && \
-    #         echo "Current directory: $(pwd)" && \
-    #         echo "Docker compose version: $(docker compose version)" && \
-    #         echo "Starting containers..." && \
-    #         docker compose up -d
-    #       register: deploy_result
-
-    #     - name: Show deployment result
-    #       debug:
-    #         msg: |
-    #           Deployment output:
-    #           {{ deploy_result.stdout_lines | default([]) }}
-              
-    #           Errors (if any):
-    #           {{ deploy_result.stderr_lines | default([]) }}
-
-    #     - name: Verify deployment
-    #       shell: |
-    #         echo "Checking running containers..."
-    #         docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-    #       register: verify_result
-
-    #     - name: Show verification result
-    #       debug:
-    #         msg: |
-    #           Running containers:
-    #           {{ verify_result.stdout_lines | default([]) }}
-
-    # - name: Show deployment errors
-    #   debug:
-    #     msg: |
-    #       Deployment failed:
-    #       {{ deploy_result.stderr_lines | default([]) }}
-    #   when: deploy_result is failed
-    #   failed_when: true
-
-    # - name: Show deployment success
-    #   debug:
-    #     msg: |
-    #       Deployment completed successfully:
-    #       {{ deploy_result.stdout_lines | default([]) }}
-    #   when: deploy_result is success
+        - name: Show Helm status
+          debug:
+            msg: |
+              Helm deployments:
+              {{ helm_status.stdout_lines | default([]) }}
+          when: env_type == 'prod'
