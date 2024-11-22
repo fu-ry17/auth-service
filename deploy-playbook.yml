@@ -64,13 +64,35 @@
               {{ test_result.stdout_lines | default([]) }}
           when: test_result.rc == 0
 
-        - name: Show test errors
+    - name: Run SonarQube Analysis
+      block:
+        - name: Execute SonarQube scan
+          shell: |
+            echo "Starting SonarQube analysis..."
+            ./gradlew sonar \
+              -Dsonar.host.url={{ sonar_url }} \
+              -Dsonar.login={{ sonar_token }} \
+              -Dsonar.projectKey={{ project_key }}
+          args:
+            chdir: "{{ remote_workspace }}"
+          environment:
+            SONAR_TOKEN: "{{ sonar_token }}"
+          register: sonar_result
+          when: test_result.rc == 0
+
+        - name: Show SonarQube analysis status
           debug:
             msg: |
-              Test execution failed:
-              Return code: {{ test_result.rc }}
-              Errors: {{ test_result.stderr_lines | default([]) }}
-          when: test_result is failed
+              SonarQube analysis completed successfully:
+              {{ sonar_result.stdout_lines | default([]) }}
+          when: sonar_result.rc == 0
+
+        - name: Show SonarQube analysis errors
+          debug:
+            msg: |
+              SonarQube analysis failed:
+              {{ sonar_result.stderr_lines | default([]) }}
+          when: sonar_result is failed
           failed_when: true
 
     - name: Set version and image info
