@@ -6,13 +6,25 @@
     remote_workspace: "/opt/jenkins/workspace/auth-service"
     docker_registry: "{{ docker_registry }}"
     helm_repo: "{{ helm_repo }}"
-    env_type: "{{ env_type }}"
-    docker_user: "{{ docker_user }}"
-    docker_pass: "{{ docker_pass }}"
-    k8s_domain: "{{ k8s_domain }}"
-    k8s_route: "{{ k8s_route }}"
-    k8s_env_secret: "{{ k8s_env_secret }}"
-    k8s_api: "{{ k8s_api }}"
+    ansible_python_interpreter: /usr/bin/python3
+
+  pre_tasks:
+    - name: Check required packages
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - docker-ce
+        - rsync
+        - curl
+        - git
+      ignore_errors: yes
+
+    - name: Ensure Docker service is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
 
   tasks:
     - name: Setup environment
@@ -24,37 +36,16 @@
           loop:
             - "gradle:8.2.1-jdk17-alpine"
             - "dtzar/helm-kubectl"
-          register: docker_pull
-          ignore_errors: yes
-
-        - name: Show Docker pull status
-          debug:
-            msg: "Docker pull {{ 'succeeded' if docker_pull.results[0].failed == false else 'failed' }}"
 
     - name: Create and sync workspace
       block:
-        - name: Create workspace parent directory
-          file:
-            path: "/opt/jenkins"
-            state: directory
-            mode: '0755'
-            owner: ubuntu
-            group: ubuntu
-          become: yes
-
         - name: Create remote workspace directory
           file:
             path: "{{ remote_workspace }}"
             state: directory
-            mode: '0777'
+            mode: '0755'
             owner: ubuntu
             group: ubuntu
-          become: yes
-          register: workspace_create
-
-        - name: Show workspace status
-          debug:
-            msg: "Workspace directory {{ 'created' if workspace_create.changed else 'already exists' }}"
 
         - name: Synchronize workspace
           synchronize:
@@ -62,30 +53,15 @@
             dest: "{{ remote_workspace }}"
             rsync_opts:
               - "--exclude=.git"
-              - "--chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r"
           become: no
-          register: sync_result
-          ignore_errors: yes
 
-        - name: Show sync status
-          debug:
-            msg: "{{ 'Sync failed: ' + sync_result.stderr if sync_result.failed else 'Sync completed successfully' }}"
-
-        - name: Set final permissions
+        - name: Set jenkins ownership
           file:
             path: "{{ remote_workspace }}"
             state: directory
             recurse: yes
-            mode: '0755'
             owner: jenkins
             group: jenkins
-          become: yes
-          register: ownership_result
-          ignore_errors: yes
-
-        - name: Show ownership status
-          debug:
-            msg: "{{ 'Ownership change failed: ' + ownership_result.msg if ownership_result.failed else 'Ownership set successfully' }}"
 
     - name: Run Unit Tests
       block:
@@ -93,11 +69,6 @@
           file:
             path: "{{ remote_workspace }}/gradlew"
             mode: '0755'
-          register: gradlew_chmod
-
-        - name: Show gradlew status
-          debug:
-            msg: "{{ 'Failed to set gradlew permissions: ' + gradlew_chmod.msg if gradlew_chmod.failed else 'Gradlew permissions set' }}"
 
         - name: Run Gradle tests
           shell: |
@@ -105,11 +76,11 @@
           args:
             chdir: "{{ remote_workspace }}"
           register: test_result
-          ignore_errors: yes
 
-        - name: Show test status
-          debug:
-            msg: "{{ 'Tests failed: ' + test_result.stderr if test_result.rc != 0 else 'Tests passed successfully' }}"
+        - name: Check test results
+          fail:
+            msg: "Pipeline aborted due to test build failure: {{ test_result.stderr }}"
+          when: test_result.rc != 0
 
     - name: Set Image Info
       block:
@@ -119,25 +90,18 @@
           args:
             chdir: "{{ remote_workspace }}"
           register: version_result
-          ignore_errors: yes
 
-        - name: Show version status
-          debug:
-            msg: "{{ 'Version extraction failed: ' + version_result.stderr if version_result.failed else 'Version: ' + version_result.stdout }}"
+        - name: Set version fact
+          set_fact:
+            app_version: "{{ version_result.stdout | trim }}"
 
         - name: Get chart name
           shell: |
             docker run -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm show chart ./charts | grep name | cut -d: -f 2 | tr -d ' '
           register: chart_name_result
-          ignore_errors: yes
 
-        - name: Show chart status
-          debug:
-            msg: "{{ 'Chart name extraction failed: ' + chart_name_result.stderr if chart_name_result.failed else 'Chart name: ' + chart_name_result.stdout }}"
-
-        - name: Set facts
+        - name: Set chart facts
           set_fact:
-            app_version: "{{ version_result.stdout | trim }}"
             chart_name: "{{ chart_name_result.stdout | trim }}"
             app_name: "{{ chart_name_result.stdout | trim }}-{{ env_type }}"
 
@@ -147,38 +111,19 @@
           shell: |
             docker build -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} {{ remote_workspace }}
           register: docker_build
-          ignore_errors: yes
-
-        - name: Show build status
-          debug:
-            msg: "{{ 'Docker build failed: ' + docker_build.stderr if docker_build.failed else 'Docker build successful' }}"
 
         - name: Login to Docker registry
           shell: |
             docker login {{ docker_registry }} -u {{ docker_user }} -p {{ docker_pass }}
           no_log: true
-          register: docker_login
           when: docker_build.rc == 0
-          ignore_errors: yes
-
-        - name: Show login status
-          debug:
-            msg: "{{ 'Docker login failed' if docker_login.failed else 'Docker login successful' }}"
-          when: docker_login is defined
 
         - name: Push Docker images
           shell: |
             docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }} && \
             docker tag {{ docker_registry }}/{{ app_name }}:{{ app_version }} {{ docker_registry }}/{{ app_name }}:latest && \
             docker push {{ docker_registry }}/{{ app_name }}:latest
-          register: docker_push
           when: docker_build.rc == 0
-          ignore_errors: yes
-
-        - name: Show push status
-          debug:
-            msg: "{{ 'Docker push failed: ' + docker_push.stderr if docker_push.failed else 'Docker images pushed successfully' }}"
-          when: docker_push is defined
 
     - name: Package and Push Helm Chart
       block:
@@ -187,49 +132,23 @@
             docker run --rm -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm package charts/ --app-version {{ app_version }} --version {{ app_version }}
           args:
             chdir: "{{ remote_workspace }}"
-          register: helm_package
-          ignore_errors: yes
-
-        - name: Show package status
-          debug:
-            msg: "{{ 'Helm packaging failed: ' + helm_package.stderr if helm_package.failed else 'Helm chart packaged successfully' }}"
 
         - name: Push Helm chart
           shell: |
             curl -u {{ docker_user }}:{{ docker_pass }} {{ helm_repo }} --upload-file {{ chart_name }}-{{ app_version }}.tgz -v
           args:
             chdir: "{{ remote_workspace }}"
-          register: helm_push
-          ignore_errors: yes
-
-        - name: Show push status
-          debug:
-            msg: "{{ 'Helm push failed: ' + helm_push.stderr if helm_push.failed else 'Helm chart pushed successfully' }}"
 
     - name: Deploy Application
       block:
         - name: Deploy to Development
           shell: |
             ssh ubuntu@10.0.3.74 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ env_type }} && git pull origin {{ env_type }} --rebase && sudo docker compose up -d'
-          register: dev_deploy
-          when: env_type == 'dev'
-          ignore_errors: yes
-
-        - name: Show dev deployment status
-          debug:
-            msg: "{{ 'Dev deployment failed: ' + dev_deploy.stderr if dev_deploy.failed else 'Dev deployment successful' }}"
           when: env_type == 'dev'
 
         - name: Deploy to Staging
           shell: |
             ssh ubuntu@10.0.3.85 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ env_type }} && git pull origin {{ env_type }} --rebase && sudo docker compose -f staging-compose.yml up -d'
-          register: staging_deploy
-          when: env_type == 'staging'
-          ignore_errors: yes
-
-        - name: Show staging deployment status
-          debug:
-            msg: "{{ 'Staging deployment failed: ' + staging_deploy.stderr if staging_deploy.failed else 'Staging deployment successful' }}"
           when: env_type == 'staging'
 
         - name: Deploy to Production
@@ -244,12 +163,15 @@
               --set ingress.domain='{{ k8s_domain }}' \
               --set ingress.route='{{ k8s_route }}' \
               {{ app_name }} charts/ -n {{ env_type }}
-          register: prod_deploy
           when: env_type == 'prod'
-          ignore_errors: yes
 
-        - name: Show production deployment status
-          debug:
-            msg: "{{ 'Production deployment failed: ' + prod_deploy.stderr if prod_deploy.failed else 'Production deployment successful' }}"
-          when: env_type == 'prod'
+  handlers:
+    - name: restart docker
+      service:
+        name: docker
+        state: restarted
+
+  vars_files:
+    - "{{ playbook_dir }}/vars/main.yml"
+    - "{{ playbook_dir }}/vars/{{ env_type }}.yml"
     
