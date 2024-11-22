@@ -96,15 +96,14 @@
     - name: Make gradlew executable
       file:
         path: "{{ remote_workspace }}/gradlew"
-        mode: '+x'
-      become_user: jenkins
+        mode: '0755'
 
     - name: Run Gradle tests
-      command: "./gradlew clean test --build-cache"
+      shell: |
+        sudo -u jenkins ./gradlew clean test --build-cache
       args:
         chdir: "{{ remote_workspace }}"
       register: test_result
-      become_user: jenkins
       ignore_errors: yes
 
     - name: Check test results
