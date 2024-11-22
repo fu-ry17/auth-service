@@ -29,7 +29,7 @@
           when: env_type == 'dev'
           shell: |
             echo "Deploying to dev environment..."
-            ssh -o StrictHostKeyChecking=no ubuntu@10.0.3.74 "
+            ssh -o StrictHostKeyChecking=no yewa@10.0.3.74 "
               cd /home/ubuntu/agencify-backend && \
               git fetch && \
               git checkout {{ branch_name }} && \
