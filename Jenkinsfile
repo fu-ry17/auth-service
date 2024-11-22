@@ -15,7 +15,10 @@ pipeline{
         
         stage("Run ansible playbook"){
           steps{
-            sh 'ansible-playbook deploy-playbook.yml -i inventory/dev'
+             ansiblePlaybook credentialsId: 'dev-server', 
+                disableHostKeyChecking: true, extras: "", 
+                installation: 'ansible', inventory: 'dev.inv', 
+                playbook: 'deploy-docker.yml', vaultTmpPath: ''
           }
         }   
       
