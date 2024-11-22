@@ -6,8 +6,25 @@
     remote_workspace: "/opt/jenkins/workspace/auth-service"
     docker_registry: "{{ docker_registry }}"
     helm_repo: "{{ helm_repo }}"
+    env_type: "{{ env_type }}"
+    docker_user: "{{ docker_user }}"
+    docker_pass: "{{ docker_pass }}"
+    k8s_domain: "{{ k8s_domain }}"
+    k8s_route: "{{ k8s_route }}"
+    k8s_env_secret: "{{ k8s_env_secret }}"
+    k8s_api: "{{ k8s_api }}"
 
   tasks:
+    - name: Setup environment
+      block:
+        - name: Pull required Docker images
+          docker_image:
+            name: "{{ item }}"
+            source: pull
+          loop:
+            - "gradle:8.2.1-jdk17-alpine"
+            - "dtzar/helm-kubectl"
+
     - name: Create and sync workspace
       block:
         - name: Create remote workspace directory
@@ -34,111 +51,105 @@
             owner: jenkins
             group: jenkins
 
-    - name: Run tests and analysis
+    - name: Run Unit Tests
       block:
+        - name: Make gradlew executable
+          file:
+            path: "{{ remote_workspace }}/gradlew"
+            mode: '0755'
+
         - name: Run Gradle tests
           shell: |
-            sudo -u jenkins ./gradlew clean test --build-cache --quiet
+            sudo -u jenkins ./gradlew clean test --build-cache
           args:
             chdir: "{{ remote_workspace }}"
           register: test_result
 
-        - name: Run SonarQube analysis
-          shell: |
-            sudo -u jenkins ./gradlew sonar --quiet
-          args:
-            chdir: "{{ remote_workspace }}"
-          environment:
-            SONAR_TOKEN: "{{ sonar_token | default('') }}"
-          when: test_result.rc == 0
+        - name: Check test results
+          fail:
+            msg: "Pipeline aborted due to test build failure: {{ test_result.stderr }}"
+          when: test_result.rc != 0
 
-    - name: Prepare image info
+    - name: Set Image Info
       block:
         - name: Get application version
           shell: |
-            sudo -u jenkins ./gradlew properties -q | grep '^version:' | awk '{print $2}'
+            sudo -u jenkins ./gradlew properties -q | grep 'version:' | grep -v 'kotlin.version:' | awk -F ':' '{print $2}'
           args:
             chdir: "{{ remote_workspace }}"
           register: version_result
+
+        - name: Set version fact
+          set_fact:
+            app_version: "{{ version_result.stdout | trim }}"
 
         - name: Get chart name
           shell: |
             docker run -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm show chart ./charts | grep name | cut -d: -f 2 | tr -d ' '
           register: chart_name_result
 
-        - name: Set image facts
+        - name: Set chart facts
           set_fact:
-            app_version: "{{ version_result.stdout | trim }}"
-            app_name: "{{ chart_name_result.stdout | trim }}-{{ env_type | default('dev') | lower }}"
+            chart_name: "{{ chart_name_result.stdout | trim }}"
+            app_name: "{{ chart_name_result.stdout | trim }}-{{ env_type }}"
 
-    - name: Build and push image
+    - name: Build and Push Docker Image
       block:
+        - name: Build Docker image
+          shell: |
+            docker build -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} {{ remote_workspace }}
+          register: docker_build
+
         - name: Login to Docker registry
           shell: |
             docker login {{ docker_registry }} -u {{ docker_user }} -p {{ docker_pass }}
           no_log: true
-
-        - name: Display build start
-          debug:
-            msg: "Starting Docker build for {{ docker_registry }}/{{ app_name }}"
-
-        - name: Build Docker image with tags
-          shell: |
-            docker build \
-              -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} \
-              -t {{ docker_registry }}/{{ app_name }}:latest \
-              {{ remote_workspace }}
-          register: docker_build
-
-        - name: Show build completion
-          debug:
-            msg: "Docker build completed successfully"
           when: docker_build.rc == 0
 
-        - name: Push Docker image with version tag
+        - name: Push Docker images
           shell: |
-            docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }}
-          register: version_push
-
-        - name: Push Docker image with latest tag
-          shell: |
+            docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }} && \
+            docker tag {{ docker_registry }}/{{ app_name }}:{{ app_version }} {{ docker_registry }}/{{ app_name }}:latest && \
             docker push {{ docker_registry }}/{{ app_name }}:latest
-          register: latest_push
-          when: version_push.rc == 0
+          when: docker_build.rc == 0
 
-        - name: Display push summary
-          debug:
-            msg: 
-              - "Successfully pushed images:"
-              - "  - {{ docker_registry }}/{{ app_name }}:{{ app_version }}"
-              - "  - {{ docker_registry }}/{{ app_name }}:latest"
-          when: latest_push.rc == 0
-
-      rescue:
-        - name: Display build failure
-          debug:
-            msg: "Docker build/push failed. Check the logs for details."
-          failed_when: true
-
-    - name: Package and push Helm chart
+    - name: Package and Push Helm Chart
       block:
         - name: Package Helm chart
           shell: |
             docker run --rm -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm package charts/ --app-version {{ app_version }} --version {{ app_version }}
           args:
             chdir: "{{ remote_workspace }}"
-          register: helm_package
 
-        - name: Debug Helm package
+        - name: Push Helm chart
           shell: |
-            pwd
-            ls -l {{ chart_name_result.stdout | trim }}-{{ app_version }}.tgz
+            curl -u {{ docker_user }}:{{ docker_pass }} {{ helm_repo }} --upload-file {{ chart_name }}-{{ app_version }}.tgz -v
           args:
             chdir: "{{ remote_workspace }}"
 
-        - name: Push Helm chart to repository
+    - name: Deploy Application
+      block:
+        - name: Deploy to Development
           shell: |
-            curl -u {{ docker_user }}:{{ docker_pass }} {{ helm_repo }} --upload-file {{ chart_name_result.stdout | trim }}-{{ app_version }}.tgz -v
-          args:
-            chdir: "{{ remote_workspace }}"
+            ssh ubuntu@10.0.3.74 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ env_type }} && git pull origin {{ env_type }} --rebase && sudo docker compose up -d'
+          when: env_type == 'dev'
+
+        - name: Deploy to Staging
+          shell: |
+            ssh ubuntu@10.0.3.85 'cd /home/ubuntu/agencify-backend && git fetch && git checkout {{ env_type }} && git pull origin {{ env_type }} --rebase && sudo docker compose -f staging-compose.yml up -d'
+          when: env_type == 'staging'
+
+        - name: Deploy to Production
+          shell: |
+            docker run --rm \
+              -v {{ remote_workspace }}:/app \
+              -w /app \
+              dtzar/helm-kubectl \
+              helm upgrade --install \
+              --set image.repository='{{ docker_registry }}/{{ app_name }}' \
+              --set image.tag='{{ app_version }}' \
+              --set ingress.domain='{{ k8s_domain }}' \
+              --set ingress.route='{{ k8s_route }}' \
+              {{ app_name }} charts/ -n {{ env_type }}
+          when: env_type == 'prod'
     
