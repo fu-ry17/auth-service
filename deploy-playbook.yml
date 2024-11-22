@@ -124,7 +124,6 @@
       shell: |
         docker build \
           --no-cache \
-          --progress=plain \
           -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} \
           {{ remote_workspace }}
       register: docker_build
@@ -133,16 +132,24 @@
     - name: Show Docker build logs
       debug:
         msg: "{{ docker_build.stdout_lines }}"
+      when: docker_build.stdout_lines is defined
+
+    - name: Show Docker build errors
+      debug:
+        msg: "{{ docker_build.stderr_lines }}"
+      when: docker_build.stderr_lines is defined and docker_build.rc != 0
 
     - name: Push Docker image
       shell: |
         docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }}
       register: docker_push
       become: yes
+      when: docker_build.rc == 0
 
     - name: Show Docker push logs
       debug:
         msg: "{{ docker_push.stdout_lines }}"
+      when: docker_push.stdout_lines is defined
 
     - name: Display build info
       debug:
