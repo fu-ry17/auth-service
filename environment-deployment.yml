@@ -46,9 +46,6 @@
             echo "Git status after pull:"
             git status
             
-            echo "Stopping existing containers..."
-            sudo docker compose down || echo "No containers to stop"
-            
             echo "Starting new containers..."
             sudo docker compose up -d
             
