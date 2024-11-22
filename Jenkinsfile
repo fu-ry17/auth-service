@@ -27,7 +27,7 @@ pipeline {
                         def dockerUser = sh(script: "echo $DOCKER_CREDS | cut -d':' -f1", returnStdout: true).trim()
                         def dockerPass = sh(script: "echo $DOCKER_CREDS | cut -d':' -f2", returnStdout: true).trim()
                         
-                        ansiblePlaybook(
+                        def result = ansiblePlaybook(
                             credentialsId: 'dev-server',
                             disableHostKeyChecking: true,
                             installation: 'ansible',
@@ -43,6 +43,12 @@ pipeline {
                                      -e 'helm_repo=${env.HELM_REPO}'
                                      -e 'env_type=${envType}'"""
                         )
+
+                        // Get the app version and name from the build artifacts
+                        env.APP_VERSION = sh(script: "cat ${env.WORKSPACE_DIR}/build/app_version", returnStdout: true).trim()
+                        env.APP_NAME = sh(script: "cat ${env.WORKSPACE_DIR}/build/app_name", returnStdout: true).trim()
+                        
+                        echo "Built application: ${env.APP_NAME} version: ${env.APP_VERSION}"
                     }
                 }
             }
@@ -69,8 +75,8 @@ pipeline {
                             playbook: 'environment-deployment.yml',
                             extras: """-e 'env_type=${envType}'
                                      -e 'branch_name=${branchName}'
-                                     -e 'app_name=${env.app_name}'
-                                     -e 'app_version=${env.app_version}'
+                                     -e 'app_name=${env.APP_NAME}'
+                                     -e 'app_version=${env.APP_VERSION}'
                                      -e 'k8s_secret=${getK8Secret()}'
                                      -e 'k8s_api=${setK8Api()}'
                                      -e 'k8s_domain=${setK8Domain()}'

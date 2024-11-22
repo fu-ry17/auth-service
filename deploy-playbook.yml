@@ -126,6 +126,13 @@
               - Image name: {{ app_name }}
               - Chart name: {{ chart_name }}
 
+        - name: Save app info for next stage
+          shell: |
+            echo "{{ app_version }}" > {{ workspace_dir }}/build/app_version
+            echo "{{ app_name }}" > {{ workspace_dir }}/build/app_name
+          args:
+            chdir: "{{ remote_workspace }}"
+
     - name: Build and push Docker image
       block:
         - name: Login to Docker registry
