@@ -46,7 +46,8 @@ pipeline {
             steps {
                 script {
                     def envType = setEnv()
-                    echo "Deploying to environment: ${envType}"
+                    def branchName = env.BRANCH_NAME ?: 'develop'
+                    echo "Deploying to environment: ${envType} using branch: ${branchName}"
                     
                     withCredentials([usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')]) {
                         def dockerUser = sh(script: "echo $DOCKER_CREDS | cut -d':' -f1", returnStdout: true).trim()
@@ -59,7 +60,7 @@ pipeline {
                             inventory: 'host.inv',
                             playbook: 'environment-deployment.yml',
                             extras: """-e 'env_type=${envType}'
-                                     -e 'branch_name=${env.BRANCH_NAME}'
+                                     -e 'branch_name=${branchName}'
                                      -e 'app_name=${env.app_name}'
                                      -e 'app_version=${env.app_version}'
                                      -e 'k8s_secret=${getK8Secret()}'
