@@ -28,13 +28,58 @@
         - name: Deploy to dev
           when: env_type == 'dev'
           shell: |
-            echo "Deploying to dev environment..."
-            cd /home/ubuntu/agencify-backend && \
-            git fetch && \
-            git checkout {{ branch_name }} && \
-            git pull origin {{ branch_name }} --rebase && \
-            sudo docker compose up -d
+            echo "Starting deployment to dev environment at $(date)"
+            echo "Step 1: Changing to backend directory..."
+            cd /home/ubuntu/agencify-backend || { echo "Failed to change directory"; exit 1; }
+            
+            echo "Step 2: Fetching latest changes..."
+            timeout 60 git fetch || { echo "Git fetch timed out after 60s"; exit 1; }
+            
+            echo "Step 3: Checking out branch {{ branch_name }}..."
+            timeout 30 git checkout {{ branch_name }} || { echo "Git checkout timed out after 30s"; exit 1; }
+            
+            echo "Step 4: Pulling latest changes..."
+            timeout 60 git pull origin {{ branch_name }} --rebase || { echo "Git pull timed out after 60s"; exit 1; }
+            
+            echo "Step 5: Stopping existing containers..."
+            sudo docker compose down || echo "No containers to stop"
+            
+            echo "Step 6: Starting new containers..."
+            timeout 300 sudo docker compose up -d || { echo "Docker compose timed out after 300s"; exit 1; }
+            
+            echo "Step 7: Waiting for containers to be healthy..."
+            for i in {1..30}; do
+              if sudo docker compose ps | grep -q "healthy"; then
+                echo "Containers are healthy"
+                break
+              fi
+              if [ $i -eq 30 ]; then
+                echo "Timeout waiting for containers to be healthy"
+                exit 1
+              fi
+              echo "Waiting for containers to be healthy (attempt $i/30)..."
+              sleep 10
+            done
+            
+            echo "Deployment completed successfully at $(date)"
           register: dev_deploy
+          async: 600  # 10 minutes total timeout
+          poll: 10    # Check every 10 seconds
+
+        - name: Show detailed deployment progress
+          debug:
+            msg: |
+              Deployment Status for {{ env_type }}:
+              Start Time: {{ dev_deploy.start | default('Unknown') }}
+              End Time: {{ dev_deploy.end | default('Unknown') }}
+              Duration: {{ dev_deploy.delta | default('Unknown') }}
+              
+              Output:
+              {{ dev_deploy.stdout_lines | default([]) }}
+              
+              Errors (if any):
+              {{ dev_deploy.stderr_lines | default([]) }}
+          when: env_type == 'dev'
 
         - name: Deploy to staging
           when: env_type == 'staging'
