@@ -10,13 +10,23 @@
   tasks:
     - name: Create and sync workspace
       block:
+        - name: Create jenkins workspace parent directory
+          file:
+            path: "/opt/jenkins"
+            state: directory
+            mode: '0777'
+            owner: ubuntu
+            group: ubuntu
+          become: yes
+
         - name: Create remote workspace directory
           file:
             path: "{{ remote_workspace }}"
             state: directory
-            mode: '0755'
+            mode: '0777'
             owner: ubuntu
             group: ubuntu
+          become: yes
 
         - name: Synchronize workspace
           synchronize:
@@ -24,15 +34,19 @@
             dest: "{{ remote_workspace }}"
             rsync_opts:
               - "--exclude=.git"
+              - "--chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r"
+              - "--no-times"
           become: no
 
-        - name: Set jenkins ownership
+        - name: Reset permissions
           file:
             path: "{{ remote_workspace }}"
             state: directory
             recurse: yes
+            mode: '0755'
             owner: jenkins
             group: jenkins
+          become: yes
 
     - name: Run tests and analysis
       block:
