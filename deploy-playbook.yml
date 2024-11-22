@@ -10,6 +10,12 @@
   tasks:
     - name: Create and sync workspace
       block:
+        - name: Remove existing workspace if present
+          file:
+            path: "{{ remote_workspace }}"
+            state: absent
+          become: yes
+
         - name: Create jenkins workspace parent directory
           file:
             path: "/opt/jenkins"
@@ -28,15 +34,14 @@
             group: ubuntu
           become: yes
 
-        - name: Synchronize workspace
-          synchronize:
+        - name: Copy workspace files
+          copy:
             src: "{{ workspace_dir }}/"
             dest: "{{ remote_workspace }}"
-            rsync_opts:
-              - "--exclude=.git"
-              - "--chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r"
-              - "--no-times"
-          become: no
+            owner: ubuntu
+            group: ubuntu
+            mode: preserve
+          become: yes
 
         - name: Reset permissions
           file:
