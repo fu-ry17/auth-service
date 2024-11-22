@@ -8,7 +8,7 @@ pipeline {
         PROJECT_KEY = 'agencify-auth'
         DOCKER_REGISTRY = '10.0.3.224:8003'
         HELM_REPO = 'http://10.0.3.224:8002/repository/agencify-helm-repo/'
-        SSH_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKk3ZpAx/6kxaKvPlqby5XSzWWl8ljlHPcFN7gr+PrRQ brian.yewa@agencify.insure'
+        // Remove the public key and use private key from Jenkins credentials
     }
     
     stages {
