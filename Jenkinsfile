@@ -17,7 +17,6 @@ pipeline {
             steps {
                 script {
                     echo "Workspace directory: ${env.WORKSPACE_DIR}"
-                    sh "sudo chown -R jenkins:jenkins ${env.WORKSPACE_DIR}"
                     ansiblePlaybook(
                         credentialsId: 'dev-server',
                         disableHostKeyChecking: true,
