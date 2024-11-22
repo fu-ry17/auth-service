@@ -60,8 +60,7 @@
         - name: Show test results
           debug:
             msg: |
-              Test execution completed:
-              Return code: {{ test_result.rc }}
+              Test execution completed successfully:
               {{ test_result.stdout_lines | default([]) }}
           when: test_result.rc == 0
 
@@ -71,7 +70,7 @@
               Test execution failed:
               Return code: {{ test_result.rc }}
               Errors: {{ test_result.stderr_lines | default([]) }}
-          when: test_result.rc != 0
+          when: test_result is failed
           failed_when: true
 
     - name: Set version and image info
@@ -112,7 +111,8 @@
           
         - name: Show Docker login status
           debug:
-            msg: "Docker login {{ 'successful' if docker_login.rc == 0 else 'failed' }}"
+            msg: "Docker login successful"
+          when: docker_login.rc == 0
 
         - name: Build and push Docker images
           shell: |
@@ -130,7 +130,7 @@
         - name: Show Docker build status
           debug:
             msg: |
-              Docker build and push completed:
+              Docker build and push completed successfully:
               {{ docker_build.stdout_lines | default([]) }}
           when: docker_build.rc == 0
 
@@ -139,7 +139,7 @@
             msg: |
               Docker build failed:
               {{ docker_build.stderr_lines | default([]) }}
-          when: docker_build.rc != 0
+          when: docker_build is failed
           failed_when: true
 
     - name: Package and push Helm chart
@@ -161,7 +161,7 @@
         - name: Show Helm operation status
           debug:
             msg: |
-              Helm operations completed:
+              Helm operations completed successfully:
               {{ helm_result.stdout_lines | default([]) }}
           when: helm_result.rc == 0
 
@@ -170,7 +170,7 @@
             msg: |
               Helm operations failed:
               {{ helm_result.stderr_lines | default([]) }}
-          when: helm_result.rc != 0
+          when: helm_result is failed
           failed_when: true
 
   
