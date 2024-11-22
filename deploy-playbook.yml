@@ -27,15 +27,27 @@
         state: present
         update_cache: yes
 
-    # Create workspace directory
+    # Create and prepare workspace directory
+    - name: Create jenkins workspace parent directory
+      file:
+        path: "/opt/jenkins/workspace"
+        state: directory
+        mode: '0755'
+        owner: ubuntu
+        group: ubuntu
+
+    - name: Remove existing workspace if present
+      file:
+        path: "{{ remote_workspace }}"
+        state: absent
+
     - name: Create remote workspace directory
       file:
         path: "{{ remote_workspace }}"
         state: directory
         mode: '0755'
-        owner: jenkins
-        group: jenkins
-        recurse: yes
+        owner: ubuntu
+        group: ubuntu
 
     # Copy workspace files
     - name: Synchronize workspace
@@ -45,6 +57,15 @@
         rsync_opts:
           - "--exclude=.git"
       become: no
+
+    # Set permissions after sync
+    - name: Set jenkins ownership
+      file:
+        path: "{{ remote_workspace }}"
+        state: directory
+        recurse: yes
+        owner: jenkins
+        group: jenkins
 
     # Setup stage tasks
     - name: Pull Gradle Docker image
