@@ -78,26 +78,53 @@
             docker login {{ docker_registry }} -u {{ docker_user }} -p {{ docker_pass }}
           no_log: true
 
-        - name: Build Docker image
+        - name: Display build start
+          debug:
+            msg: "Starting Docker build for {{ docker_registry }}/{{ app_name }}"
+
+        - name: Build Docker image with tags
           shell: |
-            docker build --no-cache -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} {{ remote_workspace }}
+            docker build \
+              -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} \
+              -t {{ docker_registry }}/{{ app_name }}:latest \
+              {{ remote_workspace }}
           register: docker_build
 
-        - name: Push Docker image
-          shell: |
-            docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }}
+        - name: Show build completion
+          debug:
+            msg: "Docker build completed successfully"
           when: docker_build.rc == 0
 
-        - name: Display build info
+        - name: Push Docker image with version tag
+          shell: |
+            docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }}
+          register: version_push
+
+        - name: Push Docker image with latest tag
+          shell: |
+            docker push {{ docker_registry }}/{{ app_name }}:latest
+          register: latest_push
+          when: version_push.rc == 0
+
+        - name: Display push summary
           debug:
-            msg: "Successfully built and pushed: {{ docker_registry }}/{{ app_name }}:{{ app_version }}"
-          when: docker_build.rc == 0
+            msg: 
+              - "Successfully pushed images:"
+              - "  - {{ docker_registry }}/{{ app_name }}:{{ app_version }}"
+              - "  - {{ docker_registry }}/{{ app_name }}:latest"
+          when: latest_push.rc == 0
+
+      rescue:
+        - name: Display build failure
+          debug:
+            msg: "Docker build/push failed. Check the logs for details."
+          failed_when: true
 
     - name: Package and push Helm chart
       block:
         - name: Package Helm chart
           shell: |
-            sudo helm package charts/ --app-version {{ app_version }} --version {{ app_version }}
+            docker run --rm -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm package charts/ --app-version {{ app_version }} --version {{ app_version }}
           args:
             chdir: "{{ remote_workspace }}"
           register: helm_package
