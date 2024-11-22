@@ -27,11 +27,19 @@
     - name: Verify current user
       shell: whoami
       register: current_user
-      
 
-    # - name: Show current user
-    #   debug:
-    #     msg: "Current user is: {{ current_user.stdout }}"
+    - name: Show current user
+      debug:
+        msg: "Current user is: {{ current_user.stdout }}"
+
+    - name: Check if directory exists
+      stat:
+        path: /home/ubuntu/agencify-backend
+      register: backend_dir
+
+    - name: Show directory status
+      debug:
+        msg: "Backend directory {{ 'exists' if backend_dir.stat.exists else 'does not exist' }}"
 
     # - name: Deploy to dev environment
     #   when: env_type == 'dev'
@@ -39,13 +47,36 @@
     #     - name: Clone or update repository
     #       git:
     #         repo: https://github.com/fu-ry17/auth-service.git
-    #         dest: /home/ubuntu/demo-backend
+    #         dest: /home/ubuntu/agencify-backend
     #         version: "{{ branch_name }}"
     #         force: yes
+    #       register: git_result
+
+    #     - name: Show git operation result
+    #       debug:
+    #         msg: |
+    #           Git operation completed:
+    #           Changed: {{ git_result.changed }}
+    #           Before: {{ git_result.before }}
+    #           After: {{ git_result.after }}
+
+    #     - name: Check Docker status
+    #       shell: docker ps
+    #       register: docker_status
+    #       ignore_errors: yes
+
+    #     - name: Show Docker status
+    #       debug:
+    #         msg: |
+    #           Docker containers:
+    #           {{ docker_status.stdout_lines | default([]) }}
 
     #     - name: Start docker compose
     #       shell: |
     #         cd /home/ubuntu/agencify-backend && \
+    #         echo "Current directory: $(pwd)" && \
+    #         echo "Docker compose version: $(docker compose version)" && \
+    #         echo "Starting containers..." && \
     #         docker compose up -d
     #       register: deploy_result
 
@@ -54,3 +85,33 @@
     #         msg: |
     #           Deployment output:
     #           {{ deploy_result.stdout_lines | default([]) }}
+              
+    #           Errors (if any):
+    #           {{ deploy_result.stderr_lines | default([]) }}
+
+    #     - name: Verify deployment
+    #       shell: |
+    #         echo "Checking running containers..."
+    #         docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    #       register: verify_result
+
+    #     - name: Show verification result
+    #       debug:
+    #         msg: |
+    #           Running containers:
+    #           {{ verify_result.stdout_lines | default([]) }}
+
+    # - name: Show deployment errors
+    #   debug:
+    #     msg: |
+    #       Deployment failed:
+    #       {{ deploy_result.stderr_lines | default([]) }}
+    #   when: deploy_result is failed
+    #   failed_when: true
+
+    # - name: Show deployment success
+    #   debug:
+    #     msg: |
+    #       Deployment completed successfully:
+    #       {{ deploy_result.stdout_lines | default([]) }}
+    #   when: deploy_result is success
