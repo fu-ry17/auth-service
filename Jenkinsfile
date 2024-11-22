@@ -41,6 +41,37 @@ pipeline {
                 }
             }
         }
+
+        stage('Deploy to Environment') {
+            steps {
+                script {
+                    def envType = setEnv()
+                    echo "Deploying to environment: ${envType}"
+                    
+                    withCredentials([usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')]) {
+                        def dockerUser = sh(script: "echo $DOCKER_CREDS | cut -d':' -f1", returnStdout: true).trim()
+                        def dockerPass = sh(script: "echo $DOCKER_CREDS | cut -d':' -f2", returnStdout: true).trim()
+                        
+                        ansiblePlaybook(
+                            credentialsId: 'ubuntu-dev',
+                            disableHostKeyChecking: true,
+                            installation: 'ansible',
+                            inventory: 'host.inv',
+                            playbook: 'environment-deployment.yml',
+                            extras: """-e 'env_type=${envType}'
+                                     -e 'branch_name=${env.BRANCH_NAME}'
+                                     -e 'app_name=${env.app_name}'
+                                     -e 'app_version=${env.app_version}'
+                                     -e 'k8s_secret=${getK8Secret()}'
+                                     -e 'k8s_api=${setK8Api()}'
+                                     -e 'k8s_domain=${setK8Domain()}'
+                                     -e 'k8s_route=${setK8Route()}'
+                                     -e 'docker_registry=${env.DOCKER_REGISTRY}'"""
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -60,6 +91,74 @@ def setEnv() {
                 return 'dev'
             default:
                 return 'dev'
+        }
+    }
+}
+
+def getK8Secret() {
+    def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
+    if (ENV_TAG.contains('-rc')) {
+        return 'k8sonprodNS-prod'
+    } else {
+        switch (env.BRANCH_NAME) {
+            case 'production':
+                return 'k8sonprodNS-prod'
+            case 'preprod':
+                return 'k8sonPreprodNS-Preprod'
+            case 'master':
+                return 'k8sonNewDevNS-Staging'
+            case 'develop':
+                return 'k8sonNewDevNS-Dev'
+            default:
+                return 'k8sonNewDevNS-Dev'
+        }
+    }
+}
+
+def setK8Api() {
+    def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
+    if (ENV_TAG.contains('-rc')) {
+        return 'https://10.0.4.212:6443'
+    } else {
+        switch (env.BRANCH_NAME) {
+            case 'production':
+            case 'preprod':
+                return 'https://10.0.4.212:6443'
+            default:
+                return 'https://10.0.3.149:6443'
+        }
+    }
+}
+
+def setK8Domain() {
+    def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
+    if (ENV_TAG.contains('-rc')) {
+        return 'bozomu.agencify.insure'
+    } else {
+        switch (env.BRANCH_NAME) {
+            case 'production':
+            case 'preprod':
+                return 'bozomu.agencify.insure'
+            default:
+                return 'janzi.agencify.insure'
+        }
+    }
+}
+
+def setK8Route() {
+    def ENV_TAG = sh(returnStdout: true, script: "git tag --contains | head -1").trim()
+    if (ENV_TAG.contains('-rc')) {
+        return '/prod'
+    } else {
+        switch (env.BRANCH_NAME) {
+            case 'production':
+                return '/prod'
+            case 'preprod':
+                return '/preprod'
+            case 'master':
+                return '/staging/v1'
+            default:
+                return '/api'
         }
     }
 }

@@ -1,0 +1,101 @@
+---
+- hosts: dev
+  become: true
+  vars:
+    env_type: "{{ env_type }}"
+    branch_name: "{{ branch_name | default('develop') }}"
+    app_name: "{{ app_name }}"
+    app_version: "{{ app_version }}"
+    k8s_secret: "{{ k8s_secret | default('k8sonNewDevNS-Dev') }}"
+    k8s_api: "{{ k8s_api | default('https://10.0.3.149:6443') }}"
+    k8s_domain: "{{ k8s_domain | default('janzi.agencify.insure') }}"
+    k8s_route: "{{ k8s_route | default('/api') }}"
+    docker_registry: "{{ docker_registry }}"
+
+  tasks:
+    - name: Print deployment info
+      debug:
+        msg: |
+          Starting deployment to {{ env_type }} environment:
+          - Branch: {{ branch_name }}
+          - Application: {{ app_name }}
+          - Version: {{ app_version }}
+          - Domain: {{ k8s_domain }}
+          - Route: {{ k8s_route }}
+
+    - name: Deploy to non-prod environment
+      block:
+        - name: Deploy to dev
+          when: env_type == 'dev'
+          shell: |
+            echo "Deploying to dev environment..."
+            ssh -o StrictHostKeyChecking=no ubuntu@10.0.3.74 "
+              cd /home/ubuntu/agencify-backend && \
+              git fetch && \
+              git checkout {{ branch_name }} && \
+              git pull origin {{ branch_name }} --rebase && \
+              sudo docker compose up -d
+            "
+          register: dev_deploy
+
+        - name: Deploy to staging
+          when: env_type == 'staging'
+          shell: |
+            echo "Deploying to staging environment..."
+            ssh -o StrictHostKeyChecking=no ubuntu@10.0.3.85 "
+              cd /home/ubuntu/agencify-backend && \
+              git fetch && \
+              git checkout {{ branch_name }} && \
+              git pull origin {{ branch_name }} --rebase && \
+              sudo docker compose -f staging-compose.yml up -d
+            "
+          register: staging_deploy
+
+        - name: Show non-prod deployment status
+          debug:
+            msg: |
+              Deployment completed successfully for {{ env_type }} environment:
+              {% if env_type == 'dev' %}
+              {{ dev_deploy.stdout_lines | default([]) }}
+              {% elif env_type == 'staging' %}
+              {{ staging_deploy.stdout_lines | default([]) }}
+              {% endif %}
+      when: env_type != 'prod'
+
+    - name: Deploy to production
+      block:
+        - name: Deploy using Helm
+          shell: |
+            echo "Deploying to production environment..."
+            helm list -n {{ env_type }} && \
+            helm upgrade --install \
+              --set image.repository='{{ docker_registry }}/{{ app_name }}' \
+              --set image.tag='{{ app_version }}' \
+              --set ingress.domain='{{ k8s_domain }}' \
+              --set ingress.route='{{ k8s_route }}' \
+              {{ app_name }} charts/ -n {{ env_type }}
+          register: prod_deploy
+
+        - name: Show production deployment status
+          debug:
+            msg: |
+              Production deployment completed successfully:
+              {{ prod_deploy.stdout_lines | default([]) }}
+      when: env_type == 'prod'
+
+    - name: Show deployment errors
+      debug:
+        msg: |
+          Deployment failed:
+          {% if env_type == 'dev' %}
+          {{ dev_deploy.stderr_lines | default([]) }}
+          {% elif env_type == 'staging' %}
+          {{ staging_deploy.stderr_lines | default([]) }}
+          {% else %}
+          {{ prod_deploy.stderr_lines | default([]) }}
+          {% endif %}
+      when: >
+        (env_type == 'dev' and dev_deploy is failed) or
+        (env_type == 'staging' and staging_deploy is failed) or
+        (env_type == 'prod' and prod_deploy is failed)
+      failed_when: true 
