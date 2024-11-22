@@ -7,19 +7,18 @@ pipeline {
         SONAR_URL = 'https://obokano.agencify.insure/'
         PROJECT_KEY = 'agencify-auth'
         DOCKER_REGISTRY = '10.0.3.224:8003'
-        BRANCH_NAME = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
     }
     
     stages {
         stage("Build and Test") {
             steps {
-                checkout scm
-                withCredentials([usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')]) {
-                    script {
+                script {
+                    def branchName = sh(script: 'git name-rev --name-only HEAD', returnStdout: true).trim()
+                    echo "Building for branch: ${branchName}"
+                    
+                    withCredentials([usernameColonPassword(credentialsId: 'docker-registry', variable: 'DOCKER_CREDS')]) {
                         def dockerUser = sh(script: "echo $DOCKER_CREDS | cut -d':' -f1", returnStdout: true).trim()
                         def dockerPass = sh(script: "echo $DOCKER_CREDS | cut -d':' -f2", returnStdout: true).trim()
-                        
-                        echo "Building for branch: ${env.BRANCH_NAME}"
                         
                         ansiblePlaybook(
                             credentialsId: 'dev-server',
@@ -34,7 +33,7 @@ pipeline {
                                      -e 'docker_registry=${env.DOCKER_REGISTRY}'
                                      -e 'docker_user=${dockerUser}'
                                      -e 'docker_pass=${dockerPass}'
-                                     -e 'env_type=${env.BRANCH_NAME}'"""
+                                     -e 'env_type=${branchName}'"""
                         )
                     }
                 }

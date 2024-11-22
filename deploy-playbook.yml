@@ -4,156 +4,91 @@
   vars:
     workspace_dir: "{{ workspace_dir | default(ansible_env.WORKSPACE) }}"
     remote_workspace: "/opt/jenkins/workspace/auth-service"
-    docker_registry: "10.0.3.224:8003"
+    docker_registry: "{{ docker_registry }}"
 
   tasks:
-    - name: Create remote workspace directory
-      file:
-        path: "{{ remote_workspace }}"
-        state: directory
-        mode: '0755'
-        owner: ubuntu
-        group: ubuntu
+    - name: Create and sync workspace
+      block:
+        - name: Create remote workspace directory
+          file:
+            path: "{{ remote_workspace }}"
+            state: directory
+            mode: '0755'
+            owner: ubuntu
+            group: ubuntu
 
-    - name: Synchronize workspace
-      synchronize:
-        src: "{{ workspace_dir }}/"
-        dest: "{{ remote_workspace }}"
-        rsync_opts:
-          - "--exclude=.git"
-      become: no
+        - name: Synchronize workspace
+          synchronize:
+            src: "{{ workspace_dir }}/"
+            dest: "{{ remote_workspace }}"
+            rsync_opts:
+              - "--exclude=.git"
+          become: no
 
-    - name: Set jenkins ownership and make gradlew executable
-      file:
-        path: "{{ item.path }}"
-        state: "{{ item.state | default('file') }}"
-        recurse: "{{ item.recurse | default(omit) }}"
-        owner: jenkins
-        group: jenkins
-        mode: "{{ item.mode | default(omit) }}"
-      with_items:
-        - { path: "{{ remote_workspace }}", state: directory, recurse: yes }
-        - { path: "{{ remote_workspace }}/gradlew", mode: '0755' }
+        - name: Set jenkins ownership
+          file:
+            path: "{{ remote_workspace }}"
+            state: directory
+            recurse: yes
+            owner: jenkins
+            group: jenkins
 
-    - name: Run Gradle tests
-      shell: |
-        sudo -u jenkins ./gradlew clean test --build-cache --quiet
-      args:
-        chdir: "{{ remote_workspace }}"
-      register: test_result
-      ignore_errors: yes
+    - name: Run tests and analysis
+      block:
+        - name: Run Gradle tests
+          shell: |
+            sudo -u jenkins ./gradlew clean test --build-cache --quiet
+          args:
+            chdir: "{{ remote_workspace }}"
+          register: test_result
 
-    - name: Display test summary
-      debug:
-        msg: "Tests {{ 'PASSED' if test_result.rc == 0 else 'FAILED' }}"
+        - name: Run SonarQube analysis
+          shell: |
+            sudo -u jenkins ./gradlew sonar --quiet
+          args:
+            chdir: "{{ remote_workspace }}"
+          environment:
+            SONAR_TOKEN: "{{ sonar_token | default('') }}"
+          when: test_result.rc == 0
 
-    - name: Run SonarQube analysis
-      shell: |
-        sudo -u jenkins ./gradlew sonar --quiet
-      args:
-        chdir: "{{ remote_workspace }}"
-      environment:
-        SONAR_TOKEN: "{{ sonar_token | default('') }}"
+    - name: Prepare image info
+      block:
+        - name: Get application version
+          shell: |
+            sudo -u jenkins ./gradlew properties -q | grep '^version:' | awk '{print $2}'
+          args:
+            chdir: "{{ remote_workspace }}"
+          register: version_result
 
-    - name: Wait for quality gate
-      shell: |
-        sleep 10
-        curl -s -u "{{ sonar_token | default('') }}:" "{{ sonar_url }}/api/qualitygates/project_status?projectKey={{ project_key }}" | grep -o '"status":"[^"]*"' | cut -d'"' -f4
-      register: quality_gate_result
-      until: quality_gate_result.stdout == "OK"
-      retries: 5
-      delay: 5
-      ignore_errors: yes
+        - name: Get chart name
+          shell: |
+            docker run -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm show chart ./charts | grep name | cut -d: -f 2 | tr -d ' '
+          register: chart_name_result
 
-    - name: Get application version
-      shell: |
-        sudo -u jenkins ./gradlew properties -q | grep '^version:' | awk '{print $2}'
-      args:
-        chdir: "{{ remote_workspace }}"
-      register: version_result
+        - name: Set image facts
+          set_fact:
+            app_version: "{{ version_result.stdout | trim }}"
+            app_name: "{{ chart_name_result.stdout | trim }}-{{ env_type | default('dev') | lower }}"
 
-    - name: Set version fact
-      set_fact:
-        app_version: "{{ version_result.stdout | trim }}"
+    - name: Build and push image
+      block:
+        - name: Login to Docker registry
+          shell: |
+            docker login {{ docker_registry }} -u {{ docker_user }} -p {{ docker_pass }}
+          no_log: true
 
-    - name: Get chart name
-      shell: |
-        docker run -v {{ remote_workspace }}:/app -w /app dtzar/helm-kubectl helm show chart ./charts | grep name | cut -d: -f 2 | tr -d ' '
-      register: chart_name_result
+        - name: Build Docker image
+          shell: |
+            docker build --no-cache -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} {{ remote_workspace }}
+          register: docker_build
 
-    - name: Set chart name fact
-      set_fact:
-        chart_name: "{{ chart_name_result.stdout | trim }}"
-        app_name: "{{ chart_name_result.stdout | trim }}-{{ env_type | default('dev') }}"
+        - name: Push Docker image
+          shell: |
+            docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }}
+          when: docker_build.rc == 0
 
-    - name: Configure Docker daemon for insecure registry
-      copy:
-        content: |
-          {
-            "insecure-registries": ["{{ docker_registry }}"]
-          }
-        dest: /etc/docker/daemon.json
-        mode: '0644'
-      register: docker_config
-
-    - name: Restart Docker service if config changed
-      systemd:
-        name: docker
-        state: restarted
-      when: docker_config.changed
-
-    - name: Login to Docker registry
-      shell: |
-        docker login {{ docker_registry }} -u {{ docker_user }} -p {{ docker_pass }}
-      register: docker_login
-      become: yes
-      no_log: true
-      ignore_errors: yes
-
-    - name: Show Docker login status
-      debug:
-        msg: "Docker login {{ 'succeeded' if docker_login.rc == 0 else 'failed' }}"
-      when: docker_login is defined
-
-    - name: Fail if Docker login failed
-      fail:
-        msg: "Failed to login to Docker registry"
-      when: docker_login.rc != 0
-
-    - name: Build Docker image
-      shell: |
-        docker build \
-          --no-cache \
-          -t {{ docker_registry }}/{{ app_name }}:{{ app_version }} \
-          {{ remote_workspace }}
-      register: docker_build
-      become: yes
-
-    - name: Show Docker build logs
-      debug:
-        msg: "{{ docker_build.stdout_lines }}"
-      when: docker_build.stdout_lines is defined
-
-    - name: Show Docker build errors
-      debug:
-        msg: "{{ docker_build.stderr_lines }}"
-      when: docker_build.stderr_lines is defined and docker_build.rc != 0
-
-    - name: Push Docker image
-      shell: |
-        docker push {{ docker_registry }}/{{ app_name }}:{{ app_version }}
-      register: docker_push
-      become: yes
-      when: docker_build.rc == 0
-
-    - name: Show Docker push logs
-      debug:
-        msg: "{{ docker_push.stdout_lines }}"
-      when: docker_push.stdout_lines is defined
-
-    - name: Display build info
-      debug:
-        msg: 
-          - "Image: {{ docker_registry }}/{{ app_name }}:{{ app_version }}"
-          - "Chart: {{ chart_name }}"
+        - name: Display build info
+          debug:
+            msg: "Successfully built and pushed: {{ docker_registry }}/{{ app_name }}:{{ app_version }}"
+          when: docker_build.rc == 0
     
