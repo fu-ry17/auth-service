@@ -5,6 +5,7 @@
     workspace_dir: "{{ workspace_dir | default(ansible_env.WORKSPACE) }}"
     gradle_image: "gradle:8.2.1-jdk17-alpine"
     kubectl_image: "dtzar/helm-kubectl"
+    remote_workspace: "/opt/jenkins/workspace/auth-service"
 
   tasks:
     # Initial setup tasks
@@ -26,6 +27,24 @@
         state: present
         update_cache: yes
 
+    # Create workspace directory
+    - name: Create remote workspace directory
+      file:
+        path: "{{ remote_workspace }}"
+        state: directory
+        mode: '0755'
+        owner: jenkins
+        group: jenkins
+
+    # Copy workspace files
+    - name: Synchronize workspace
+      synchronize:
+        src: "{{ workspace_dir }}/"
+        dest: "{{ remote_workspace }}"
+        rsync_opts:
+          - "--exclude=.git"
+      delegate_to: "{{ inventory_hostname }}"
+
     # Setup stage tasks
     - name: Pull Gradle Docker image
       docker_image:
@@ -42,10 +61,10 @@
     # Unit Test stage tasks
     - name: Debug workspace directory
       debug:
-        msg: "Current workspace directory: {{ workspace_dir }}"
+        msg: "Current workspace directory: {{ remote_workspace }}"
 
     - name: List directory contents
-      shell: "ls -la {{ workspace_dir }}"
+      shell: "ls -la {{ remote_workspace }}"
       register: dir_contents
 
     - name: Debug directory contents
@@ -54,13 +73,13 @@
 
     - name: Make gradlew executable
       file:
-        path: "{{ workspace_dir }}/gradlew"
+        path: "{{ remote_workspace }}/gradlew"
         mode: '+x'
 
     - name: Run Gradle tests
       command: "./gradlew clean test --build-cache"
       args:
-        chdir: "{{ workspace_dir }}"
+        chdir: "{{ remote_workspace }}"
       register: test_result
       ignore_errors: yes
 
