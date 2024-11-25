@@ -57,7 +57,7 @@
               ==========================================
 
         - name: Pull latest changes
-          shell: git pull
+          shell: git pull --rebase
           args:
             chdir: /home/ubuntu/agencify-backend
           register: git_pull
