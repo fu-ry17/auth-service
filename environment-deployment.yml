@@ -1,3 +1,4 @@
+---
 - hosts: dev
   become: true
   vars:
@@ -41,6 +42,12 @@
               {{ git_status.stdout_lines | default([]) }}
               ==========================================
         
+        - name: Stash any local changes (if any)
+          shell: git stash save "Stashing changes before rebase"
+          args:
+            chdir: /home/ubuntu/agencify-backend
+          when: env_type == 'dev' and git_status.stdout_lines | search("Changes not staged for commit")
+
         - name: Checkout branch
           shell: git checkout {{ branch_name }}
           args:
@@ -56,7 +63,22 @@
               {{ git_checkout.stdout_lines | default([]) }}
               ==========================================
 
-        - name: Pull latest changes
+        - name: Fetch latest changes from remote
+          shell: git fetch
+          args:
+            chdir: /home/ubuntu/agencify-backend
+          register: git_fetch
+          when: env_type == 'dev'
+
+        - name: Show git fetch results
+          debug:
+            msg: |
+              ==========================================
+              Git Fetch Results:
+              {{ git_fetch.stdout_lines | default([]) }}
+              ==========================================
+        
+        - name: Perform git pull with rebase
           shell: git pull --rebase
           args:
             chdir: /home/ubuntu/agencify-backend
@@ -67,10 +89,16 @@
           debug:
             msg: |
               ==========================================
-              Git Pull Results:
+              Git Pull (Rebase) Results:
               {{ git_pull.stdout_lines | default([]) }}
               ==========================================
         
+        - name: Apply stashed changes (if any)
+          shell: git stash pop
+          args:
+            chdir: /home/ubuntu/agencify-backend
+          when: env_type == 'dev' and git_status.stdout_lines | search("Changes not staged for commit")
+
         - name: Start new containers
           shell: sudo docker compose pull
           args:
