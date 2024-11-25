@@ -27,23 +27,8 @@
 
     - name: Deploy to non-prod environment
       block:
-        - name: Check Git status
-          shell: git status
-          args:
-            chdir: /home/ubuntu/agencify-backend
-          register: git_status
-          when: env_type == 'dev'
-
-        - name: Show git status results
-          debug:
-            msg: |
-              ==========================================
-              Git Status Output:
-              {{ git_status.stdout_lines | default([]) }}
-              ==========================================
-  
         - name: Checkout branch
-          shell: git checkout {{ branch_name }}
+          shell: git checkout develop
           args:
             chdir: /home/ubuntu/agencify-backend
           register: git_checkout
@@ -55,21 +40,6 @@
               ==========================================
               Git Checkout Results:
               {{ git_checkout.stdout_lines | default([]) }}
-              ==========================================
-
-        - name: Fetch latest changes from remote
-          shell: git fetch
-          args:
-            chdir: /home/ubuntu/agencify-backend
-          register: git_fetch
-          when: env_type == 'dev'
-
-        - name: Show git fetch results
-          debug:
-            msg: |
-              ==========================================
-              Git Fetch Results:
-              {{ git_fetch.stdout_lines | default([]) }}
               ==========================================
         
         - name: Perform git pull with rebase
@@ -86,14 +56,8 @@
               Git Pull (Rebase) Results:
               {{ git_pull.stdout_lines | default([]) }}
               ==========================================
-        
-        - name: Apply stashed changes (if any)
-          shell: git stash pop
-          args:
-            chdir: /home/ubuntu/agencify-backend
-          when: env_type == 'dev' and git_status.stdout_lines | search("Changes not staged for commit")
 
-        - name: Start new containers
+        - name: Pull new containers
           shell: sudo docker compose pull
           args:
             chdir: /home/ubuntu/agencify-backend
