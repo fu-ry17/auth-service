@@ -41,13 +41,7 @@
               Git Status Output:
               {{ git_status.stdout_lines | default([]) }}
               ==========================================
-        
-        - name: Stash any local changes (if any)
-          shell: git stash save "Stashing changes before rebase"
-          args:
-            chdir: /home/ubuntu/agencify-backend
-          when: env_type == 'dev' and git_status.stdout_lines | search("Changes not staged for commit")
-
+  
         - name: Checkout branch
           shell: git checkout {{ branch_name }}
           args:
