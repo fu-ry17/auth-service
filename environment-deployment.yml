@@ -1,4 +1,3 @@
----
 - hosts: dev
   become: true
   vars:
@@ -34,6 +33,14 @@
           register: git_status
           when: env_type == 'dev'
 
+        - name: Show git status results
+          debug:
+            msg: |
+              ==========================================
+              Git Status Output:
+              {{ git_status.stdout_lines | default([]) }}
+              ==========================================
+        
         - name: Checkout branch
           shell: git checkout {{ branch_name }}
           args:
@@ -56,6 +63,14 @@
           register: git_pull
           when: env_type == 'dev'
 
+        - name: Show git pull results
+          debug:
+            msg: |
+              ==========================================
+              Git Pull Results:
+              {{ git_pull.stdout_lines | default([]) }}
+              ==========================================
+        
         - name: Start new containers
           shell: sudo docker compose pull
           args:
