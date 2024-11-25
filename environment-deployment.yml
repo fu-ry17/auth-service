@@ -56,22 +56,6 @@
           register: git_pull
           when: env_type == 'dev'
 
-        # - name: Show pull results
-        #   debug:
-        #     msg: |
-        #       ==========================================
-        #       Git Pull Results:
-        #       {{ git_pull.stdout_lines | default([]) }}
-        #       ==========================================
-
-        # - name: Show container stop results
-        #   debug:
-        #     msg: |
-        #       ==========================================
-        #       Stopping Containers:
-        #       {{ docker_stop.stdout_lines | default([]) }}
-        #       ==========================================
-
         - name: Start new containers
           shell: sudo docker compose pull
           args:
